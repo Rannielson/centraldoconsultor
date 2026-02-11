@@ -1,0 +1,26 @@
+{
+  "name": "api-central-do-consultor",
+  "version": "1.0.0",
+  "description": "API REST para gerenciar boletos da API SGA organizados por consultores e clientes",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  },
+  "keywords": ["fastify", "api", "boletos", "sga"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "fastify": "^4.26.0",
+    "@fastify/cors": "^8.5.0",
+    "@fastify/env": "^4.3.0",
+    "pg": "^8.11.3",
+    "dotenv": "^16.4.1",
+    "uuid": "^9.0.1",
+    "axios": "^1.6.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  }
+}

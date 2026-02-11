@@ -1,0 +1,208 @@
+### API Central do Consultor - Testes
+### Use este arquivo com extensões REST Client (VS Code) ou similar
+
+@baseUrl = http://localhost:3000
+@masterKey = master-key-12345-central-consultor
+@apiKey = sua-api-key-aqui
+@clienteId = uuid-do-cliente
+@consultorId = uuid-do-consultor
+
+### Health Check
+GET {{baseUrl}}/health
+
+### ===========================================
+### GESTÃO DE API KEYS (Requer Master Key)
+### ===========================================
+
+### Criar nova API Key
+POST {{baseUrl}}/api/auth/keys
+X-API-Key: {{masterKey}}
+Content-Type: application/json
+
+{
+  "descricao": "API Key de Teste"
+}
+
+### Listar API Keys
+GET {{baseUrl}}/api/auth/keys
+X-API-Key: {{masterKey}}
+
+### Buscar API Key por ID
+GET {{baseUrl}}/api/auth/keys/uuid-da-key
+X-API-Key: {{masterKey}}
+
+### Ativar/Desativar API Key
+PATCH {{baseUrl}}/api/auth/keys/uuid-da-key/toggle
+X-API-Key: {{masterKey}}
+
+### Deletar API Key
+DELETE {{baseUrl}}/api/auth/keys/uuid-da-key
+X-API-Key: {{masterKey}}
+
+### ===========================================
+### GESTÃO DE CLIENTES
+### ===========================================
+
+### Criar Cliente
+POST {{baseUrl}}/api/clientes
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "nome": "Cooperativa ABC",
+  "token_bearer": "SEU_TOKEN_DA_API_SGA",
+  "url_base_api": "https://api.hinova.com.br/api/sga/v2",
+  "ativo": true
+}
+
+### Listar Clientes
+GET {{baseUrl}}/api/clientes
+X-API-Key: {{apiKey}}
+
+### Listar Clientes Ativos
+GET {{baseUrl}}/api/clientes?ativo=true
+X-API-Key: {{apiKey}}
+
+### Buscar Cliente por ID
+GET {{baseUrl}}/api/clientes/{{clienteId}}
+X-API-Key: {{apiKey}}
+
+### Atualizar Cliente
+PUT {{baseUrl}}/api/clientes/{{clienteId}}
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "nome": "Cooperativa ABC Atualizada",
+  "ativo": true
+}
+
+### Deletar Cliente
+DELETE {{baseUrl}}/api/clientes/{{clienteId}}
+X-API-Key: {{apiKey}}
+
+### ===========================================
+### GESTÃO DE CONSULTORES
+### ===========================================
+
+### Criar Consultor
+POST {{baseUrl}}/api/consultores
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "cliente_id": "{{clienteId}}",
+  "nome": "João Silva",
+  "id_consultor_sga": "4",
+  "contato": "(83) 99999-9999",
+  "ativo": true
+}
+
+### Listar Todos os Consultores
+GET {{baseUrl}}/api/consultores
+X-API-Key: {{apiKey}}
+
+### Listar Consultores de um Cliente
+GET {{baseUrl}}/api/consultores?cliente_id={{clienteId}}
+X-API-Key: {{apiKey}}
+
+### Listar Consultores Ativos
+GET {{baseUrl}}/api/consultores?ativo=true
+X-API-Key: {{apiKey}}
+
+### Buscar Consultor por ID
+GET {{baseUrl}}/api/consultores/{{consultorId}}
+X-API-Key: {{apiKey}}
+
+### Atualizar Consultor
+PUT {{baseUrl}}/api/consultores/{{consultorId}}
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "nome": "João Silva Atualizado",
+  "contato": "(83) 98888-8888"
+}
+
+### Deletar Consultor
+DELETE {{baseUrl}}/api/consultores/{{consultorId}}
+X-API-Key: {{apiKey}}
+
+### ===========================================
+### CONFIGURAÇÕES DE FILTRO
+### ===========================================
+
+### Criar/Atualizar Configuração
+POST {{baseUrl}}/api/configuracoes
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "cliente_id": "{{clienteId}}",
+  "situacoes_veiculo_aceitas": ["ATIVO", "INADIMPLENTE", "REGULAR"]
+}
+
+### Listar Todas as Configurações
+GET {{baseUrl}}/api/configuracoes
+X-API-Key: {{apiKey}}
+
+### Buscar Configuração por Cliente
+GET {{baseUrl}}/api/configuracoes/{{clienteId}}
+X-API-Key: {{apiKey}}
+
+### Deletar Configuração
+DELETE {{baseUrl}}/api/configuracoes/{{clienteId}}
+X-API-Key: {{apiKey}}
+
+### ===========================================
+### SINCRONIZAÇÃO E CONSULTA DE BOLETOS
+### ===========================================
+
+### Sincronizar Boletos (Período Específico)
+POST {{baseUrl}}/api/boletos/sincronizar
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "cliente_id": "{{clienteId}}",
+  "data_vencimento_inicial": "01/02/2026",
+  "data_vencimento_final": "28/02/2026",
+  "codigo_situacao_boleto": "2"
+}
+
+### Sincronizar Boletos (Mês Atual Automático)
+POST {{baseUrl}}/api/boletos/sincronizar
+X-API-Key: {{apiKey}}
+Content-Type: application/json
+
+{
+  "cliente_id": "{{clienteId}}"
+}
+
+### Listar Boletos (Básico)
+GET {{baseUrl}}/api/boletos?cliente_id={{clienteId}}&page=1&limit=10
+X-API-Key: {{apiKey}}
+
+### Listar Boletos por Consultor
+GET {{baseUrl}}/api/boletos?cliente_id={{clienteId}}&consultor_id={{consultorId}}&page=1&limit=10
+X-API-Key: {{apiKey}}
+
+### Listar Boletos por Situação
+GET {{baseUrl}}/api/boletos?cliente_id={{clienteId}}&situacao_boleto=ABERTO&page=1&limit=10
+X-API-Key: {{apiKey}}
+
+### Listar Boletos por Período
+GET {{baseUrl}}/api/boletos?cliente_id={{clienteId}}&data_vencimento_inicial=01/02/2026&data_vencimento_final=15/02/2026&page=1&limit=10
+X-API-Key: {{apiKey}}
+
+### Listar Boletos com Múltiplos Filtros
+GET {{baseUrl}}/api/boletos?cliente_id={{clienteId}}&consultor_id={{consultorId}}&situacao_boleto=ABERTO&data_vencimento_inicial=01/02/2026&data_vencimento_final=28/02/2026&page=1&limit=50
+X-API-Key: {{apiKey}}
+
+### Buscar Boleto por ID
+GET {{baseUrl}}/api/boletos/uuid-do-boleto
+X-API-Key: {{apiKey}}
+
+### Resumo de Boletos do Consultor
+GET {{baseUrl}}/api/boletos/consultor/{{consultorId}}/resumo?cliente_id={{clienteId}}
+X-API-Key: {{apiKey}}
