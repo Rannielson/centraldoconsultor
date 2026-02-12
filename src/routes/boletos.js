@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { authenticateApiKey } from '../middlewares/auth.js';
 import { query } from '../config/database.js';
 import { sincronizarBoletos, listarBoletos, buscarBoletoPorId } from '../services/boletoService.js';
@@ -167,6 +168,33 @@ export default async function boletosRoutes(fastify, options) {
         error: 'Erro interno',
         message: error.message || 'Erro ao listar boletos'
       });
+    }
+  });
+
+  /**
+   * GET /api/boletos/pdf/:nossoNumero
+   * Download do PDF do boleto (proxy GET no link_boleto)
+   */
+  fastify.get('/pdf/:nossoNumero', {
+    preHandler: authenticateApiKey
+  }, async (request, reply) => {
+    try {
+      const { nossoNumero } = request.params;
+      const { cliente_id, consultor_id } = request.query;
+      if (!cliente_id) return reply.code(400).send({ error: 'Erro de validação', message: 'cliente_id é obrigatório' });
+      const boleto = await query(
+        'SELECT link_boleto FROM boletos WHERE cliente_id = $1 AND nosso_numero = $2' + (consultor_id ? ' AND consultor_id = $3' : ''),
+        consultor_id ? [cliente_id, nossoNumero, consultor_id] : [cliente_id, nossoNumero]
+      );
+      if (boleto.rows.length === 0 || !boleto.rows[0].link_boleto) return reply.code(404).send({ error: 'Não encontrado', message: 'Boleto ou link do PDF não encontrado.' });
+      const pdfUrl = boleto.rows[0].link_boleto;
+      const res = await axios.get(pdfUrl, { responseType: 'arraybuffer', timeout: 15000, validateStatus: () => true });
+      if (res.status !== 200) return reply.code(502).send({ error: 'Erro ao obter PDF', message: 'O servidor do boleto não respondeu.' });
+      const filename = `boleto-${nossoNumero}.pdf`;
+      return reply.header('Content-Disposition', `attachment; filename="${filename}"`).header('Content-Type', res.headers['content-type'] || 'application/pdf').send(Buffer.from(res.data));
+    } catch (err) {
+      console.error('Erro proxy PDF:', err);
+      return reply.code(500).send({ error: 'Erro interno', message: err.message });
     }
   });
 

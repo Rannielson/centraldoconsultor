@@ -4,6 +4,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import cors from '@fastify/cors';
 import dotenv from 'dotenv';
+import axios from 'axios';
 import { testConnection } from './config/database.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -77,6 +78,30 @@ fastify.get('/api/config-status', async (request, reply) => {
 });
 
 // ========== Acesso por short code (SEM API Key) — mais prático para links /app/s/:code ==========
+// GET /api/boletos-por-short/:code/pdf/:nossoNumero — download do PDF do boleto (proxy GET no link_boleto)
+fastify.get('/api/boletos-por-short/:code/pdf/:nossoNumero', async (request, reply) => {
+  try {
+    const { code, nossoNumero } = request.params;
+    const { resolverPorShortCode } = await import('./services/consultorLinksService.js');
+    const { query } = await import('./config/database.js');
+    const data = await resolverPorShortCode(code);
+    if (!data) return reply.code(404).send({ error: 'Link inválido', message: 'Código não encontrado.' });
+    const boleto = await query(
+      'SELECT link_boleto FROM boletos WHERE cliente_id = $1 AND consultor_id = $2 AND nosso_numero = $3',
+      [data.cliente_id, data.consultor_id, nossoNumero]
+    );
+    if (boleto.rows.length === 0 || !boleto.rows[0].link_boleto) return reply.code(404).send({ error: 'Não encontrado', message: 'Boleto ou link do PDF não encontrado.' });
+    const pdfUrl = boleto.rows[0].link_boleto;
+    const res = await axios.get(pdfUrl, { responseType: 'arraybuffer', timeout: 15000, validateStatus: () => true });
+    if (res.status !== 200) return reply.code(502).send({ error: 'Erro ao obter PDF', message: 'O servidor do boleto não respondeu.' });
+    const filename = `boleto-${nossoNumero}.pdf`;
+    return reply.header('Content-Disposition', `attachment; filename="${filename}"`).header('Content-Type', res.headers['content-type'] || 'application/pdf').send(Buffer.from(res.data));
+  } catch (err) {
+    console.error('Erro proxy PDF:', err.message);
+    return reply.code(500).send({ error: 'Erro interno', message: err.message });
+  }
+});
+
 // GET /api/boletos-por-short/:code/detalhe/:nossoNumero — detalhe do boleto (PIX, PDF)
 fastify.get('/api/boletos-por-short/:code/detalhe/:nossoNumero', async (request, reply) => {
   try {

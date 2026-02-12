@@ -177,6 +177,9 @@
     .modal-overlay.open .modal { transform: translateY(0); }
     .modal h2 { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--foreground); }
     .modal-actions { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1.25rem; }
+    .copy-notification { margin-top: 1rem; padding: 1rem; background: var(--muted); border-radius: 8px; }
+    .copy-notification-text { margin: 0 0 0.75rem 0; font-size: 0.95rem; color: var(--foreground); }
+    .copy-notification-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .modal-loading { text-align: center; padding: 1.5rem; color: var(--muted-foreground); }
     .detalhe-grid { display: grid; gap: 0.75rem; }
     .detalhe-item { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 1rem; }
@@ -221,6 +224,13 @@
         <p class="modal-loading" id="modalLoading">Clique no botão para carregar os dados de pagamento.</p>
         <button type="button" class="btn btn-primary" id="btnCarregarPagamento">Carregar dados para pagamento</button>
         <div id="modalDetalhe" style="display:none;"></div>
+        <div id="copyNotification" class="copy-notification" style="display:none;">
+          <p class="copy-notification-text">Copiado! Deseja enviar para o contato cadastrado no sistema (<span id="copyNotificationTel"></span>) no WhatsApp?</p>
+          <div class="copy-notification-actions">
+            <button type="button" class="btn btn-primary" id="copyNotificationEnviar">Enviar no WhatsApp</button>
+            <button type="button" class="btn btn-secondary" id="copyNotificationVoltar">Voltar</button>
+          </div>
+        </div>
         <div class="modal-actions" id="modalActions" style="display:none;">
           <button type="button" class="btn btn-secondary btn-with-icon" id="btnCopiarLinha">
             <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="6" width="2" height="12"/><rect x="5" y="6" width="1" height="12"/><rect x="7" y="6" width="2" height="12"/><rect x="10" y="6" width="1" height="12"/><rect x="12" y="6" width="3" height="12"/><rect x="16" y="6" width="1" height="12"/><rect x="18" y="6" width="2" height="12"/><rect x="21" y="6" width="1" height="12"/></svg></span>
@@ -232,7 +242,7 @@
           </button>
           <button type="button" class="btn btn-secondary btn-with-icon" id="btnEnviarPdf">
             <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>
-            <span>Enviar PDF (WhatsApp)</span>
+            <span>Baixar PDF</span>
           </button>
         </div>
       </div>
@@ -472,17 +482,37 @@
         document.getElementById('modalOverlay').classList.add('open');
       }
 
-      function copyAndOpenWhatsApp(text) {
+      let copiedTextForWhatsApp = null;
+
+      function formatTelefoneDisplay(celular) {
+        if (!celular) return 'não cadastrado';
+        const d = (celular || '').replace(/\D/g, '');
+        if (d.length === 11) return '(' + d.slice(0, 2) + ') ' + d.slice(2, 7) + '-' + d.slice(7);
+        if (d.length === 10) return '(' + d.slice(0, 2) + ') ' + d.slice(2, 6) + '-' + d.slice(6);
+        return celular;
+      }
+
+      function showCopyNotification(text) {
+        copiedTextForWhatsApp = text;
+        document.getElementById('copyNotificationTel').textContent = formatTelefoneDisplay(modalCelular);
+        const box = document.getElementById('copyNotification');
+        const btnEnviar = document.getElementById('copyNotificationEnviar');
+        box.style.display = 'block';
+        btnEnviar.style.display = celularParaWhatsApp(modalCelular) ? '' : 'none';
+      }
+
+      function hideCopyNotification() {
+        document.getElementById('copyNotification').style.display = 'none';
+        copiedTextForWhatsApp = null;
+      }
+
+      function copyAndAskWhatsApp(text) {
         if (!text) return;
-        const waNumber = celularParaWhatsApp(modalCelular);
-        const copyDone = () => {
-          if (waNumber) window.open('https://wa.me/' + waNumber + '?text=' + encodeURIComponent(text), '_blank');
-        };
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(copyDone).catch(() => { fallbackCopy(text); copyDone(); });
+          navigator.clipboard.writeText(text).then(() => showCopyNotification(text)).catch(() => { fallbackCopy(text); showCopyNotification(text); });
         } else {
           fallbackCopy(text);
-          copyDone();
+          showCopyNotification(text);
         }
       }
 
@@ -501,11 +531,27 @@
         const d = modalDetalheSga && modalDetalheSga[0];
         if (!d) return;
         if (d.celular) modalCelular = d.celular;
-        document.getElementById('btnCopiarLinha').onclick = () => copyAndOpenWhatsApp(d.linha_digitavel);
-        document.getElementById('btnCopiarPix').onclick = () => copyAndOpenWhatsApp(d.pix && d.pix.copia_cola);
+        document.getElementById('btnCopiarLinha').onclick = () => copyAndAskWhatsApp(d.linha_digitavel);
+        document.getElementById('btnCopiarPix').onclick = () => copyAndAskWhatsApp(d.pix && d.pix.copia_cola);
         const link = d.link_boleto || d.short_link || '';
-        document.getElementById('btnEnviarPdf').onclick = () => {
-          if (link && celularParaWhatsApp(modalCelular)) window.open('https://wa.me/' + celularParaWhatsApp(modalCelular) + '?text=' + encodeURIComponent(link), '_blank');
+        document.getElementById('btnEnviarPdf').onclick = async () => {
+          if (!link) { alert('Link do PDF não disponível para este boleto.'); return; }
+          const downloadUrl = shortCode
+            ? apiBase + '/api/boletos-por-short/' + encodeURIComponent(shortCode) + '/pdf/' + encodeURIComponent(modalNossoNumero)
+            : apiBase + '/api/boletos/pdf/' + encodeURIComponent(modalNossoNumero) + '?cliente_id=' + encodeURIComponent(modalClienteId) + (modalConsultorId ? '&consultor_id=' + encodeURIComponent(modalConsultorId) : '');
+          try {
+            const res = await fetch(downloadUrl, shortCode ? {} : { headers: { 'X-API-Key': apiKey } });
+            if (!res.ok) throw new Error(await res.text());
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'boleto-' + (modalNossoNumero || '') + '.pdf';
+            a.click();
+            URL.revokeObjectURL(url);
+          } catch (e) {
+            alert('Erro ao baixar PDF: ' + (e.message || 'Tente novamente.'));
+          }
         };
       }
 
@@ -551,6 +597,13 @@
       document.getElementById('modalOverlay').addEventListener('click', function(e) {
         if (e.target === this) this.classList.remove('open');
       });
+
+      document.getElementById('copyNotificationEnviar').addEventListener('click', () => {
+        const waNumber = celularParaWhatsApp(modalCelular);
+        if (waNumber && copiedTextForWhatsApp) window.open('https://wa.me/' + waNumber + '?text=' + encodeURIComponent(copiedTextForWhatsApp), '_blank');
+        hideCopyNotification();
+      });
+      document.getElementById('copyNotificationVoltar').addEventListener('click', hideCopyNotification);
 
       const searchInput = document.getElementById('searchInput');
       if (searchInput) searchInput.addEventListener('input', applySearch);
