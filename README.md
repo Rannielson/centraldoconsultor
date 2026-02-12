@@ -98,6 +98,12 @@ npm start
 
 O servidor iniciará em `http://localhost:3000`
 
+### Deploy (Railway) e URLs curtas
+
+Para que os links `/app/s/:code` funcionem em produção, configure no Railway:
+
+- **WEBAPP_API_KEY**: API Key válida e ativa (pode ser o mesmo valor de `MASTER_API_KEY` ou uma key criada via `POST /api/auth/keys`). Se não for definida, o frontend exibirá "API Key inválida ou inativa." ao abrir o link.
+
 ## 📁 Estrutura do Projeto
 
 ```

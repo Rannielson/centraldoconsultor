@@ -53,7 +53,7 @@ fastify.get('/app/s/:code', async (request, reply) => {
   const { resolverPorShortCode } = await import('./services/consultorLinksService.js');
   const data = await resolverPorShortCode(code);
   if (!data) return reply.code(404).type('text/html').send('<h1>Link inválido ou expirado</h1>');
-  const webappKey = keyFromUrl || process.env.WEBAPP_API_KEY || '';
+  const webappKey = keyFromUrl || process.env.WEBAPP_API_KEY || process.env.MASTER_API_KEY || '';
   const logoUrl = (data.logo_url && String(data.logo_url).trim()) || '';
   const indexPath = path.join(publicDir, 'index.html');
   if (!fs.existsSync(indexPath)) return reply.code(404).send('Not found');
