@@ -35,7 +35,8 @@ export default async function clientesRoutes(fastify, options) {
         nome: { type: 'string', minLength: 3, maxLength: 255 },
         token_bearer: { type: 'string', minLength: 10 },
         url_base_api: { type: 'string', format: 'uri' },
-        ativo: { type: 'boolean' }
+        ativo: { type: 'boolean' },
+        logo_url: { type: 'string', maxLength: 2000 }
       }
     }
   };
@@ -100,7 +101,7 @@ export default async function clientesRoutes(fastify, options) {
       const { ativo } = request.query;
       
       let queryText = `
-        SELECT id, nome, url_base_api, ativo, created_at, updated_at
+        SELECT id, nome, url_base_api, ativo, logo_url, created_at, updated_at
         FROM clientes
       `;
       
@@ -143,7 +144,7 @@ export default async function clientesRoutes(fastify, options) {
       const { id } = request.params;
       
       const result = await query(
-        `SELECT id, nome, url_base_api, ativo, created_at, updated_at
+        `SELECT id, nome, url_base_api, ativo, logo_url, created_at, updated_at
          FROM clientes
          WHERE id = $1`,
         [id]
@@ -180,7 +181,7 @@ export default async function clientesRoutes(fastify, options) {
   }, async (request, reply) => {
     try {
       const { id } = request.params;
-      const { nome, token_bearer, url_base_api, ativo } = request.body;
+      const { nome, token_bearer, url_base_api, ativo, logo_url } = request.body;
       
       // Verifica se o cliente existe
       const checkResult = await query(
@@ -216,6 +217,10 @@ export default async function clientesRoutes(fastify, options) {
         updates.push(`ativo = $${paramCount++}`);
         values.push(ativo);
       }
+      if (logo_url !== undefined) {
+        updates.push(`logo_url = $${paramCount++}`);
+        values.push(logo_url ? String(logo_url).trim() : null);
+      }
       
       if (updates.length === 0) {
         return reply.code(400).send({
@@ -230,7 +235,7 @@ export default async function clientesRoutes(fastify, options) {
         `UPDATE clientes
          SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP
          WHERE id = $${paramCount}
-         RETURNING id, nome, url_base_api, ativo, created_at, updated_at`,
+         RETURNING id, nome, url_base_api, ativo, logo_url, created_at, updated_at`,
         values
       );
       

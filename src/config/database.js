@@ -5,6 +5,10 @@ dotenv.config();
 
 const { Pool } = pg;
 
+if (!process.env.DATABASE_URL) {
+  console.error('❌ DATABASE_URL não está definida. Crie um arquivo .env a partir do .env.example e configure a URL do banco.');
+}
+
 // Configuração do pool de conexões
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -30,7 +34,11 @@ export async function testConnection() {
     console.log('✅ Conexão com banco de dados estabelecida:', result.rows[0].now);
     return true;
   } catch (error) {
-    console.error('❌ Erro ao conectar com banco de dados:', error.message);
+    const msg = error.message || error.code || String(error);
+    console.error('❌ Erro ao conectar com banco de dados:', msg);
+    if (process.env.NODE_ENV === 'development' && !process.env.DATABASE_URL) {
+      console.error('   Dica: crie o arquivo .env com DATABASE_URL (copie de .env.example).');
+    }
     return false;
   }
 }

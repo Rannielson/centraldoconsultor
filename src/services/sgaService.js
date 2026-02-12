@@ -158,6 +158,40 @@ export async function buscarTodosBoletosPeriodo(tokenBearer, urlBase, params) {
 }
 
 /**
+ * Busca um boleto na API SGA por nosso número (detalhe completo para pagamento)
+ * @param {string} tokenBearer - Token de autenticação Bearer
+ * @param {string} urlBase - URL base da API SGA
+ * @param {string} nossoNumero - Nosso número do boleto
+ * @returns {Promise<Array>} Array com o objeto do boleto (resposta da SGA)
+ */
+export async function buscarBoletoPorNossoNumero(tokenBearer, urlBase, nossoNumero) {
+  try {
+    const endpoint = `${urlBase}/buscar/boleto/${encodeURIComponent(nossoNumero)}`;
+    const response = await axios.get(endpoint, {
+      headers: {
+        'Authorization': `Bearer ${tokenBearer}`
+      },
+      timeout: 30000
+    });
+    const data = response.data;
+    const arr = Array.isArray(data) ? data : (data ? [data] : []);
+    return arr;
+  } catch (error) {
+    if (error.response) {
+      const status = error.response.status;
+      const data = error.response.data;
+      if (status === 401) throw new Error('Token de autenticação inválido ou expirado');
+      if (status === 403) throw new Error('Acesso negado pela API SGA');
+      if (status === 404) throw new Error('Boleto não encontrado na SGA');
+      if (status >= 500) throw new Error('Erro interno na API SGA');
+      throw new Error(data?.message || error.message);
+    }
+    if (error.request) throw new Error('Não foi possível conectar à API SGA.');
+    throw new Error(error.message || 'Erro ao buscar boleto');
+  }
+}
+
+/**
  * Valida o formato da data (DD/MM/YYYY)
  * @param {string} data - Data a ser validada
  * @returns {boolean} True se válida
@@ -204,6 +238,7 @@ export function obterPeriodoMesAtual() {
 export default {
   buscarBoletosPeriodo,
   buscarTodosBoletosPeriodo,
+  buscarBoletoPorNossoNumero,
   validarFormatoData,
   obterPeriodoMesAtual
 };

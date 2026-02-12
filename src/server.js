@@ -1,7 +1,13 @@
 import Fastify from 'fastify';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import cors from '@fastify/cors';
 import dotenv from 'dotenv';
 import { testConnection } from './config/database.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const publicDir = path.join(__dirname, '..', 'public');
 
 // Importar rotas
 import clientesRoutes from './routes/clientes.js';
@@ -9,6 +15,7 @@ import consultoresRoutes from './routes/consultores.js';
 import configuracoesRoutes from './routes/configuracoes.js';
 import boletosRoutes from './routes/boletos.js';
 import apiKeysRoutes from './routes/apikeys.js';
+import consultorLinksPlugin from './routes/consultorLinks.js';
 
 // Carregar variáveis de ambiente
 dotenv.config();
@@ -24,6 +31,37 @@ const fastify = Fastify({
 await fastify.register(cors, {
   origin: true, // Permitir todas as origens (ajuste em produção)
   credentials: true
+});
+
+// Servir webapp estático em /app
+fastify.get('/app', (request, reply) => reply.redirect(301, '/app/'));
+fastify.get('/app/', (request, reply) => {
+  const indexPath = path.join(publicDir, 'index.html');
+  if (!fs.existsSync(indexPath)) return reply.code(404).send('Not found');
+  reply.type('text/html').send(fs.readFileSync(indexPath, 'utf8'));
+});
+fastify.get('/app/index.html', (request, reply) => {
+  const indexPath = path.join(publicDir, 'index.html');
+  if (!fs.existsSync(indexPath)) return reply.code(404).send('Not found');
+  reply.type('text/html').send(fs.readFileSync(indexPath, 'utf8'));
+});
+
+// URL curta /app/s/:code — injeta token e API key no HTML (?key= na URL ou WEBAPP_API_KEY no servidor)
+fastify.get('/app/s/:code', async (request, reply) => {
+  const { code } = request.params;
+  const keyFromUrl = (request.query && request.query.key) ? String(request.query.key).trim() : '';
+  const { resolverPorShortCode } = await import('./services/consultorLinksService.js');
+  const data = await resolverPorShortCode(code);
+  if (!data) return reply.code(404).type('text/html').send('<h1>Link inválido ou expirado</h1>');
+  const webappKey = keyFromUrl || process.env.WEBAPP_API_KEY || '';
+  const logoUrl = (data.logo_url && String(data.logo_url).trim()) || '';
+  const indexPath = path.join(publicDir, 'index.html');
+  if (!fs.existsSync(indexPath)) return reply.code(404).send('Not found');
+  let html = fs.readFileSync(indexPath, 'utf8');
+  const configScript = `<script>window.__CONFIG__=${JSON.stringify({ token: data.slug, apiKey: webappKey, logoUrl })};</script>`;
+  if (!html.includes('</head>')) html = configScript + html;
+  else html = html.replace('</head>', configScript + '\n</head>');
+  reply.type('text/html').send(html);
 });
 
 // Health check endpoint (sem autenticação)
@@ -70,6 +108,7 @@ await fastify.register(consultoresRoutes, { prefix: '/api/consultores' });
 await fastify.register(configuracoesRoutes, { prefix: '/api/configuracoes' });
 await fastify.register(boletosRoutes, { prefix: '/api/boletos' });
 await fastify.register(apiKeysRoutes, { prefix: '/api/auth/keys' });
+await fastify.register(consultorLinksPlugin);
 
 // Handler de erros global
 fastify.setErrorHandler((error, request, reply) => {

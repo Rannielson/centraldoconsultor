@@ -1,5 +1,6 @@
 import { query } from '../config/database.js';
 import { buscarTodosBoletosPeriodo } from './sgaService.js';
+import { competenciaDeData, gerarLinksParaCompetencia } from './consultorLinksService.js';
 
 /**
  * Serviço de gerenciamento de boletos
@@ -22,6 +23,9 @@ export async function sincronizarBoletos(clienteId, dataInicial, dataFinal, codi
     total_inseridos: 0,
     total_atualizados: 0,
     total_ignorados: 0,
+    ignorados_sem_veiculos: 0,
+    ignorados_situacao_veiculo: 0,
+    ignorados_consultor_nao_encontrado: 0,
     erros: []
   };
   
@@ -103,13 +107,16 @@ export async function sincronizarBoletos(clienteId, dataInicial, dataFinal, codi
         // Verificar se o boleto tem veículos
         if (!boleto.veiculos || boleto.veiculos.length === 0) {
           estatisticas.total_ignorados++;
+          estatisticas.ignorados_sem_veiculos++;
           continue;
         }
         
+        let boletoSalvo = false;
         // Processar cada veículo do boleto
         for (const veiculo of boleto.veiculos) {
           // Filtro 1: Verificar situação do veículo
           if (!situacoesAceitas.includes(veiculo.situacao_veiculo)) {
+            estatisticas.ignorados_situacao_veiculo++;
             continue;
           }
           
@@ -117,13 +124,17 @@ export async function sincronizarBoletos(clienteId, dataInicial, dataFinal, codi
           const consultor = consultoresMap.get(veiculo.codigo_voluntario);
           
           if (!consultor) {
+            estatisticas.ignorados_consultor_nao_encontrado++;
             continue;
           }
+          boletoSalvo = true;
           
-          // Extrair dados relevantes do boleto
+          // Extrair dados relevantes do boleto (situacao_veiculo vem da API SGA)
           const dadosBoleto = {
             cliente_id: clienteId,
             consultor_id: consultor.id,
+            id_consultor_sga: consultor.id_consultor_sga || '',
+            nome_consultor: consultor.nome || '',
             nosso_numero: boleto.nosso_numero?.toString() || '',
             linha_digitavel: boleto.linha_digitavel || '',
             valor_boleto: parseFloat(boleto.valor_boleto) || 0,
@@ -132,6 +143,7 @@ export async function sincronizarBoletos(clienteId, dataInicial, dataFinal, codi
             celular: boleto.celular || '',
             data_vencimento: converterData(boleto.data_vencimento),
             situacao_boleto: boleto.situacao_boleto || '',
+            situacao_veiculo: veiculo.situacao_veiculo || '',
             modelo_veiculo: veiculo.modelo || '',
             placa_veiculo: veiculo.placa || '',
             mes_referente: boleto.mes_referente || '',
@@ -157,13 +169,36 @@ export async function sincronizarBoletos(clienteId, dataInicial, dataFinal, codi
       }
     }
     
-    console.log('\n📊 Sincronização concluída!');
-    console.log(`   Total processados: ${estatisticas.total_processados}`);
-    console.log(`   Inseridos: ${estatisticas.total_inseridos}`);
-    console.log(`   Atualizados: ${estatisticas.total_atualizados}`);
-    console.log(`   Ignorados: ${estatisticas.total_ignorados}`);
-    console.log(`   Erros: ${estatisticas.erros.length}\n`);
+    // Contagem real de linhas no banco (1 linha por nosso_numero)
+    const countResult = await query(
+      'SELECT COUNT(*) as total FROM boletos WHERE cliente_id = $1',
+      [clienteId]
+    );
+    estatisticas.total_boletos_no_banco = parseInt(countResult.rows[0].total, 10);
     
+    console.log('\n📊 Sincronização concluída!');
+    console.log(`   Total boletos da API: ${estatisticas.total_processados}`);
+    console.log(`   Inseridos: ${estatisticas.total_inseridos} | Atualizados: ${estatisticas.total_atualizados}`);
+    console.log(`   Total de boletos no banco (Proseg): ${estatisticas.total_boletos_no_banco}`);
+    console.log(`   Ignorados (sem veículos): ${estatisticas.ignorados_sem_veiculos}`);
+    console.log(`   Veículos descartados por situação não aceita: ${estatisticas.ignorados_situacao_veiculo}`);
+    console.log(`   Veículos descartados (consultor não cadastrado): ${estatisticas.ignorados_consultor_nao_encontrado}`);
+    console.log(`   Erros: ${estatisticas.erros.length}\n`);
+
+    const competencia = competenciaDeData(dataInicial);
+    if (competencia) {
+      try {
+        const links = await gerarLinksParaCompetencia(clienteId, competencia);
+        estatisticas.links_gerados = links.length;
+        if (links.length > 0) {
+          console.log(`   Links públicos gerados/atualizados: ${links.length} (competência ${competencia})\n`);
+        }
+      } catch (err) {
+        console.error('⚠️ Erro ao gerar links de consultor:', err.message);
+        estatisticas.links_gerados = 0;
+      }
+    }
+
     return estatisticas;
     
   } catch (error) {
@@ -181,14 +216,16 @@ async function upsertBoleto(dadosBoleto) {
   try {
     const result = await query(
       `INSERT INTO boletos (
-        cliente_id, consultor_id, nosso_numero, linha_digitavel, valor_boleto,
-        nome_associado, cpf_associado, celular, data_vencimento, situacao_boleto,
+        cliente_id, consultor_id, id_consultor_sga, nome_consultor, nosso_numero, linha_digitavel, valor_boleto,
+        nome_associado, cpf_associado, celular, data_vencimento, situacao_boleto, situacao_veiculo,
         modelo_veiculo, placa_veiculo, mes_referente, dados_completos
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       ON CONFLICT (cliente_id, nosso_numero)
       DO UPDATE SET
         consultor_id = EXCLUDED.consultor_id,
+        id_consultor_sga = EXCLUDED.id_consultor_sga,
+        nome_consultor = EXCLUDED.nome_consultor,
         linha_digitavel = EXCLUDED.linha_digitavel,
         valor_boleto = EXCLUDED.valor_boleto,
         nome_associado = EXCLUDED.nome_associado,
@@ -196,6 +233,7 @@ async function upsertBoleto(dadosBoleto) {
         celular = EXCLUDED.celular,
         data_vencimento = EXCLUDED.data_vencimento,
         situacao_boleto = EXCLUDED.situacao_boleto,
+        situacao_veiculo = EXCLUDED.situacao_veiculo,
         modelo_veiculo = EXCLUDED.modelo_veiculo,
         placa_veiculo = EXCLUDED.placa_veiculo,
         mes_referente = EXCLUDED.mes_referente,
@@ -205,6 +243,8 @@ async function upsertBoleto(dadosBoleto) {
       [
         dadosBoleto.cliente_id,
         dadosBoleto.consultor_id,
+        dadosBoleto.id_consultor_sga,
+        dadosBoleto.nome_consultor,
         dadosBoleto.nosso_numero,
         dadosBoleto.linha_digitavel,
         dadosBoleto.valor_boleto,
@@ -213,6 +253,7 @@ async function upsertBoleto(dadosBoleto) {
         dadosBoleto.celular,
         dadosBoleto.data_vencimento,
         dadosBoleto.situacao_boleto,
+        dadosBoleto.situacao_veiculo,
         dadosBoleto.modelo_veiculo,
         dadosBoleto.placa_veiculo,
         dadosBoleto.mes_referente,
@@ -311,10 +352,13 @@ export async function listarBoletos(filtros) {
     // Calcular offset
     const offset = (page - 1) * limit;
     
-    // Buscar boletos com paginação
+    // Buscar boletos com paginação (id_consultor_sga e nome_consultor na própria tabela boletos)
     const boletosResult = await query(
       `SELECT 
         b.id,
+        b.consultor_id,
+        b.id_consultor_sga,
+        b.nome_consultor,
         b.nosso_numero,
         b.linha_digitavel,
         b.valor_boleto,
@@ -323,16 +367,15 @@ export async function listarBoletos(filtros) {
         b.celular,
         b.data_vencimento,
         b.situacao_boleto,
+        b.situacao_veiculo,
         b.modelo_veiculo,
         b.placa_veiculo,
         b.mes_referente,
+        b.pix_copia_cola,
+        b.link_boleto,
         b.created_at,
-        b.updated_at,
-        c.id as consultor_id,
-        c.nome as consultor_nome,
-        c.id_consultor_sga
+        b.updated_at
        FROM boletos b
-       INNER JOIN consultores c ON b.consultor_id = c.id
        WHERE ${whereClause}
        ORDER BY b.data_vencimento DESC, b.created_at DESC
        LIMIT $${paramCount} OFFSET $${paramCount + 1}`,
@@ -344,7 +387,7 @@ export async function listarBoletos(filtros) {
       id: row.id,
       consultor: {
         id: row.consultor_id,
-        nome: row.consultor_nome,
+        nome: row.nome_consultor,
         id_consultor_sga: row.id_consultor_sga
       },
       nosso_numero: row.nosso_numero,
@@ -355,19 +398,30 @@ export async function listarBoletos(filtros) {
       celular: row.celular,
       data_vencimento: row.data_vencimento,
       situacao_boleto: row.situacao_boleto,
+      situacao_veiculo: row.situacao_veiculo,
       modelo_veiculo: row.modelo_veiculo,
       placa_veiculo: row.placa_veiculo,
       mes_referente: row.mes_referente,
+      pix_copia_cola: row.pix_copia_cola,
+      link_boleto: row.link_boleto,
       created_at: row.created_at,
       updated_at: row.updated_at
     }));
+
+    // Logo do cliente (SaaS: cada empresa com sua logo)
+    let cliente = { logo_url: null };
+    const clienteResult = await query('SELECT logo_url FROM clientes WHERE id = $1', [cliente_id]);
+    if (clienteResult.rows.length > 0 && clienteResult.rows[0].logo_url) {
+      cliente.logo_url = clienteResult.rows[0].logo_url;
+    }
     
     return {
       total,
       page: parseInt(page),
       limit: parseInt(limit),
       total_pages: Math.ceil(total / limit),
-      boletos
+      boletos,
+      cliente
     };
     
   } catch (error) {
@@ -386,12 +440,8 @@ export async function buscarBoletoPorId(boletoId) {
     const result = await query(
       `SELECT 
         b.*,
-        c.id as consultor_id,
-        c.nome as consultor_nome,
-        c.id_consultor_sga,
         cl.nome as cliente_nome
        FROM boletos b
-       INNER JOIN consultores c ON b.consultor_id = c.id
        INNER JOIN clientes cl ON b.cliente_id = cl.id
        WHERE b.id = $1`,
       [boletoId]
@@ -411,7 +461,7 @@ export async function buscarBoletoPorId(boletoId) {
       },
       consultor: {
         id: row.consultor_id,
-        nome: row.consultor_nome,
+        nome: row.nome_consultor,
         id_consultor_sga: row.id_consultor_sga
       },
       nosso_numero: row.nosso_numero,
@@ -422,9 +472,12 @@ export async function buscarBoletoPorId(boletoId) {
       celular: row.celular,
       data_vencimento: row.data_vencimento,
       situacao_boleto: row.situacao_boleto,
+      situacao_veiculo: row.situacao_veiculo,
       modelo_veiculo: row.modelo_veiculo,
       placa_veiculo: row.placa_veiculo,
       mes_referente: row.mes_referente,
+      pix_copia_cola: row.pix_copia_cola,
+      link_boleto: row.link_boleto,
       dados_completos: row.dados_completos,
       created_at: row.created_at,
       updated_at: row.updated_at

@@ -1,6 +1,7 @@
 import { authenticateApiKey } from '../middlewares/auth.js';
+import { query } from '../config/database.js';
 import { sincronizarBoletos, listarBoletos, buscarBoletoPorId } from '../services/boletoService.js';
-import { validarFormatoData, obterPeriodoMesAtual } from '../services/sgaService.js';
+import { validarFormatoData, obterPeriodoMesAtual, buscarBoletoPorNossoNumero } from '../services/sgaService.js';
 
 /**
  * Rotas de gerenciamento de boletos
@@ -165,6 +166,74 @@ export default async function boletosRoutes(fastify, options) {
       return reply.code(500).send({
         error: 'Erro interno',
         message: error.message || 'Erro ao listar boletos'
+      });
+    }
+  });
+
+  /**
+   * GET /api/boletos/detalhe/:nossoNumero
+   * Buscar detalhe do boleto na SGA (proxy) e persistir pix_copia_cola e link_boleto
+   */
+  fastify.get('/detalhe/:nossoNumero', {
+    preHandler: authenticateApiKey
+  }, async (request, reply) => {
+    try {
+      const { nossoNumero } = request.params;
+      const { cliente_id, consultor_id } = request.query;
+      if (!cliente_id) {
+        return reply.code(400).send({
+          error: 'Erro de validação',
+          message: 'O parâmetro cliente_id é obrigatório'
+        });
+      }
+      const clienteResult = await query(
+        'SELECT id, token_bearer, url_base_api FROM clientes WHERE id = $1 AND ativo = true',
+        [cliente_id]
+      );
+      if (clienteResult.rows.length === 0) {
+        return reply.code(404).send({
+          error: 'Não encontrado',
+          message: 'Cliente não encontrado'
+        });
+      }
+      const cliente = clienteResult.rows[0];
+      const boletoCheckParams = [cliente_id, nossoNumero];
+      let boletoCheckSql = 'SELECT id, consultor_id FROM boletos WHERE cliente_id = $1 AND nosso_numero = $2';
+      if (consultor_id) {
+        boletoCheckSql += ' AND consultor_id = $3';
+        boletoCheckParams.push(consultor_id);
+      }
+      const boletoCheck = await query(boletoCheckSql, boletoCheckParams);
+      if (boletoCheck.rows.length === 0) {
+        return reply.code(404).send({
+          error: 'Não encontrado',
+          message: 'Boleto não encontrado para este cliente'
+        });
+      }
+      const resposta = await buscarBoletoPorNossoNumero(
+        cliente.token_bearer,
+        cliente.url_base_api,
+        nossoNumero
+      );
+      if (!resposta || resposta.length === 0) {
+        return reply.code(404).send({
+          error: 'Não encontrado',
+          message: 'Boleto não encontrado na SGA'
+        });
+      }
+      const item = resposta[0];
+      const pixCopiaCola = item.pix?.copia_cola || null;
+      const linkBoleto = item.link_boleto || item.short_link || null;
+      await query(
+        'UPDATE boletos SET pix_copia_cola = $1, link_boleto = $2, updated_at = CURRENT_TIMESTAMP WHERE cliente_id = $3 AND nosso_numero = $4',
+        [pixCopiaCola, linkBoleto, cliente_id, nossoNumero]
+      );
+      return reply.send(resposta);
+    } catch (error) {
+      console.error('Erro ao buscar detalhe do boleto:', error);
+      return reply.code(500).send({
+        error: 'Erro interno',
+        message: error.message || 'Erro ao buscar detalhe do boleto'
       });
     }
   });

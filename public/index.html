@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Boletos - Consultor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Funnel+Display:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* Design System Opensheets - Light Mode (layout, cores, estilo) */
+    :root {
+      --background: oklch(97.512% 0.00674 67.377);
+      --foreground: oklch(18% 0.02 45);
+      --card: oklch(100% 0.00011 271.152);
+      --card-foreground: oklch(18% 0.02 45);
+      --primary: oklch(69.18% 0.18855 38.353);
+      --primary-foreground: oklch(98% 0.008 80);
+      --secondary: oklch(94% 0.018 70);
+      --secondary-foreground: oklch(25% 0.025 45);
+      --muted: oklch(94.5% 0.014 75);
+      --muted-foreground: oklch(45% 0.015 60);
+      --accent: oklch(93.996% 0.01787 64.782);
+      --accent-foreground: oklch(22% 0.025 45);
+      --destructive: oklch(55% 0.22 27);
+      --destructive-foreground: oklch(98% 0.005 30);
+      --border: oklch(88% 0.015 80);
+      --input: oklch(82% 0.012 75);
+      --ring: oklch(69.18% 0.18855 38.353);
+      --radius: 0.8rem;
+      --radius-sm: calc(var(--radius) - 4px);
+      --radius-md: calc(var(--radius) - 2px);
+      --radius-lg: var(--radius);
+      --radius-xl: calc(var(--radius) + 4px);
+      --shadow-xs: 0 1px 3px 0px oklch(35% 0.02 45 / 0.06);
+      --shadow-sm: 0 1px 3px 0px oklch(35% 0.02 45 / 0.08), 0 1px 2px -1px oklch(35% 0.02 45 / 0.08);
+      --shadow: 0 2px 4px 0px oklch(35% 0.02 45 / 0.08), 0 1px 2px -1px oklch(35% 0.02 45 / 0.06);
+      --shadow-md: 0 4px 6px -1px oklch(35% 0.02 45 / 0.1), 0 2px 4px -2px oklch(35% 0.02 45 / 0.08);
+      --shadow-lg: 0 10px 15px -3px oklch(35% 0.02 45 / 0.1), 0 4px 6px -4px oklch(35% 0.02 45 / 0.08);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Funnel Display', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--background);
+      color: var(--foreground);
+      min-height: 100vh;
+      padding: 0 0 4rem;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      -webkit-tap-highlight-color: transparent;
+      line-height: 1.5;
+    }
+    .header {
+      background: var(--card);
+      padding: 1.25rem 0;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: var(--shadow-xs);
+      border-bottom: 1px solid var(--border);
+    }
+    .header-brand { display: flex; flex-direction: column; align-items: flex-start; gap: 0.75rem; }
+    .header-logo { max-height: 48px; max-width: 200px; width: auto; height: auto; object-fit: contain; display: block; }
+    .header-title { font-size: 1.375rem; font-weight: 600; color: var(--foreground); letter-spacing: -0.02em; line-height: 1.3; }
+    .header-subtitle { font-size: 0.875rem; color: var(--muted-foreground); margin-top: 2px; }
+    .search-wrap { margin-top: 1rem; position: relative; }
+    .search-wrap input {
+      width: 100%;
+      height: 2.75rem;
+      padding: 0 1rem 0 2.5rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      color: var(--foreground);
+      background: var(--card);
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .search-wrap input::placeholder { color: var(--muted-foreground); }
+    .search-wrap input:focus {
+      outline: none;
+      border-color: var(--ring);
+      box-shadow: 0 0 0 3px oklch(69.18% 0.18855 38.353 / 0.2);
+    }
+    .search-wrap .search-icon {
+      position: absolute;
+      left: 0.875rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted-foreground);
+      pointer-events: none;
+    }
+    .container { max-width: 720px; margin: 0 auto; padding: 0 1rem; }
+    .card {
+      background: var(--card);
+      color: var(--card-foreground);
+      border-radius: var(--radius-lg);
+      padding: 1.25rem;
+      margin-bottom: 0.75rem;
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      transition: box-shadow .2s, transform .15s;
+    }
+    .card:hover { box-shadow: var(--shadow-md); }
+    .card-row { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; margin-bottom: 0.625rem; }
+    .card-row:last-child { margin-bottom: 0; }
+    .card-label { color: var(--muted-foreground); font-size: 0.6875rem; text-transform: uppercase; letter-spacing: .06em; font-weight: 500; }
+    .card-value { font-size: 0.9375rem; color: var(--foreground); }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      min-height: 2.25rem;
+      padding: 0 1rem;
+      border: none;
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .btn:disabled { opacity: .5; pointer-events: none; cursor: not-allowed; }
+    .btn-primary {
+      background: var(--primary);
+      color: var(--primary-foreground);
+      width: 100%;
+      margin-top: 1rem;
+    }
+    .btn-primary:hover:not(:disabled) { filter: brightness(0.92); transform: scale(1.02); }
+    .btn-secondary {
+      background: var(--secondary);
+      color: var(--secondary-foreground);
+      margin-top: 0.5rem;
+      width: 100%;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-xs);
+    }
+    .btn-secondary:hover:not(:disabled) { background: var(--accent); color: var(--accent-foreground); }
+    .btn-with-icon { gap: 0.5rem; }
+    .btn-with-icon .btn-icon { flex-shrink: 0; width: 1rem; height: 1rem; }
+    .btn-with-icon .btn-icon svg { width: 100%; height: 100%; }
+    .loading, .error, .empty {
+      text-align: center;
+      padding: 3rem 1.25rem;
+      color: var(--muted-foreground);
+      font-size: 0.875rem;
+    }
+    .error { color: var(--destructive); }
+    .empty { padding-top: 2rem; }
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: oklch(18% 0.02 45 / 0.4);
+      z-index: 100;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 0;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity .2s, visibility .2s;
+    }
+    .modal-overlay.open { opacity: 1; visibility: visible; }
+    .modal {
+      background: var(--card);
+      color: var(--card-foreground);
+      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+      width: 100%;
+      max-height: 90vh;
+      overflow: auto;
+      padding: 1.5rem;
+      transform: translateY(100%);
+      transition: transform .25s ease-out;
+      box-shadow: var(--shadow-lg);
+    }
+    .modal-overlay.open .modal { transform: translateY(0); }
+    .modal h2 { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--foreground); }
+    .modal-actions { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1.25rem; }
+    .modal-loading { text-align: center; padding: 1.5rem; color: var(--muted-foreground); }
+    .detalhe-grid { display: grid; gap: 0.75rem; }
+    .detalhe-item { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 1rem; }
+    .detalhe-item .label { color: var(--muted-foreground); font-size: 0.8125rem; }
+    .detalhe-item .value { font-size: 0.9375rem; color: var(--foreground); }
+    *::selection { background: oklch(69.18% 0.18855 38.353 / 0.25); color: var(--foreground); }
+    @media (min-width: 600px) {
+      .modal { max-width: 420px; margin: 0 auto 0; border-radius: var(--radius-lg); align-self: center; }
+      .modal-overlay { align-items: center; }
+      .container { padding: 0 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-brand">
+        <img id="headerLogo" class="header-logo" src="" alt="" style="display:none;">
+        <div>
+          <h1 class="header-title" id="headerTitle">Central do Consultor</h1>
+          <p class="header-subtitle" id="headerSubtitle"></p>
+        </div>
+      </div>
+      <div class="search-wrap" id="searchWrap" style="display:none;">
+        <span class="search-icon" aria-hidden="true">🔍</span>
+        <input type="search" id="searchInput" placeholder="Buscar por nome ou placa..." autocomplete="off">
+      </div>
+    </div>
+  </header>
+
+  <main class="container" id="main">
+    <div class="loading" id="loading">Carregando...</div>
+    <div class="error" id="error" style="display:none;"></div>
+    <div id="list" style="display:none;"></div>
+    <div class="empty" id="empty" style="display:none;">Nenhum boleto encontrado.</div>
+  </main>
+
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+      <h2 id="modalTitle">Dados do boleto</h2>
+      <div id="modalBody">
+        <p class="modal-loading" id="modalLoading">Clique no botão para carregar os dados de pagamento.</p>
+        <button type="button" class="btn btn-primary" id="btnCarregarPagamento">Carregar dados para pagamento</button>
+        <div id="modalDetalhe" style="display:none;"></div>
+        <div class="modal-actions" id="modalActions" style="display:none;">
+          <button type="button" class="btn btn-secondary btn-with-icon" id="btnCopiarLinha">
+            <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="6" width="2" height="12"/><rect x="5" y="6" width="1" height="12"/><rect x="7" y="6" width="2" height="12"/><rect x="10" y="6" width="1" height="12"/><rect x="12" y="6" width="3" height="12"/><rect x="16" y="6" width="1" height="12"/><rect x="18" y="6" width="2" height="12"/><rect x="21" y="6" width="1" height="12"/></svg></span>
+            <span>Copiar linha digitável</span>
+          </button>
+          <button type="button" class="btn btn-secondary btn-with-icon" id="btnCopiarPix">
+            <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg></span>
+            <span>Copiar código PIX</span>
+          </button>
+          <button type="button" class="btn btn-secondary btn-with-icon" id="btnEnviarPdf">
+            <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>
+            <span>Enviar PDF (WhatsApp)</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const params = new URLSearchParams(location.search);
+      const config = window.__CONFIG__ || {};
+      let token = config.token || params.get('token');
+      let clienteId = params.get('cliente_id');
+      let consultorId = params.get('consultor_id');
+      let nomeConsultor = '';
+      let apiKey = config.apiKey || params.get('key') || '';
+      let logoUrl = config.logoUrl || params.get('logo') || '';
+      let allBoletos = [];
+      const apiBase = '';
+
+      function show(el, show) {
+        if (el) el.style.display = show ? '' : 'none';
+      }
+
+      function setError(msg) {
+        show(document.getElementById('loading'), false);
+        show(document.getElementById('list'), false);
+        show(document.getElementById('empty'), false);
+        const err = document.getElementById('error');
+        err.textContent = msg;
+        show(err, true);
+      }
+
+      function updateHeaderTitle() {
+        const titleEl = document.getElementById('headerTitle');
+        const subEl = document.getElementById('headerSubtitle');
+        if (titleEl) titleEl.textContent = 'Central do Consultor';
+        if (subEl) {
+          subEl.textContent = nomeConsultor || '';
+          subEl.style.display = nomeConsultor ? '' : 'none';
+        }
+      }
+
+      function applyLogo() {
+        const img = document.getElementById('headerLogo');
+        if (!img || !logoUrl) return;
+        img.src = logoUrl;
+        img.alt = 'Logo';
+        img.style.display = 'block';
+        img.onerror = () => { img.style.display = 'none'; };
+      }
+
+      async function resolveToken() {
+        if (!token) return false;
+        const res = await fetch(apiBase + '/api/consultor-link/' + encodeURIComponent(token));
+        if (!res.ok) return false;
+        const data = await res.json();
+        if (data.cliente_id) clienteId = data.cliente_id;
+        if (data.consultor_id) consultorId = data.consultor_id;
+        if (data.nome_consultor) nomeConsultor = data.nome_consultor;
+        if (data.logo_url) { logoUrl = data.logo_url; applyLogo(); }
+        updateHeaderTitle();
+        return true;
+      }
+
+      async function loadBoletos() {
+        if (!clienteId || !consultorId) {
+          setError('Link inválido. Falta cliente_id e consultor_id ou token.');
+          return;
+        }
+        if (!apiKey) {
+          setError('Informe a API Key na URL: ?key=SUA_API_KEY (ou use token com key no link).');
+          return;
+        }
+        const res = await fetch(apiBase + '/api/boletos?cliente_id=' + encodeURIComponent(clienteId) + '&consultor_id=' + encodeURIComponent(consultorId) + '&limit=500', {
+          headers: { 'X-API-Key': apiKey }
+        });
+        if (!res.ok) {
+          if (res.status === 401) setError('API Key inválida ou inativa.');
+          else setError('Erro ao carregar boletos: ' + (await res.text()));
+          return;
+        }
+        const data = await res.json();
+        if (data.cliente && data.cliente.logo_url) { logoUrl = data.cliente.logo_url; applyLogo(); }
+        show(document.getElementById('loading'), false);
+        if (!data.boletos || data.boletos.length === 0) {
+          show(document.getElementById('empty'), true);
+          show(document.getElementById('searchWrap'), false);
+          return;
+        }
+        const raw = (data.boletos || []).slice().sort((a, b) => {
+          const da = a.data_vencimento ? new Date(a.data_vencimento).getTime() : 0;
+          const db = b.data_vencimento ? new Date(b.data_vencimento).getTime() : 0;
+          return da - db;
+        });
+        allBoletos = raw;
+        if (!nomeConsultor && raw[0] && raw[0].consultor && raw[0].consultor.nome) nomeConsultor = raw[0].consultor.nome;
+        updateHeaderTitle();
+        show(document.getElementById('searchWrap'), true);
+        applySearch();
+      }
+
+      function applySearch() {
+        const q = (document.getElementById('searchInput') && document.getElementById('searchInput').value || '').trim().toLowerCase();
+        const filtered = !q ? allBoletos : allBoletos.filter(b => {
+          const nome = (b.nome_associado || '').toLowerCase();
+          const placa = (b.placa_veiculo || '').toLowerCase().replace(/\s/g, '');
+          const qn = q.replace(/\s/g, '');
+          return nome.includes(qn) || placa.includes(qn);
+        });
+        const listEl = document.getElementById('list');
+        const emptyEl = document.getElementById('empty');
+        if (filtered.length === 0) {
+          show(listEl, false);
+          emptyEl.textContent = q ? 'Nenhum boleto encontrado para essa busca.' : 'Nenhum boleto encontrado.';
+          show(emptyEl, true);
+          return;
+        }
+        show(emptyEl, false);
+        renderList(filtered);
+        show(listEl, true);
+      }
+
+      function formatDate(d) {
+        if (!d) return '-';
+        const s = String(d).trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+          const [, ano, mes, dia] = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          return dia + '/' + mes + '/' + ano;
+        }
+        const x = new Date(d);
+        return isNaN(x.getTime()) ? d : x.toLocaleDateString('pt-BR');
+      }
+
+      function formatMoney(n) {
+        if (n == null) return '-';
+        return 'R$ ' + Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+
+      function escapeAttr(s) {
+        return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      }
+
+      function celularParaWhatsApp(celular) {
+        const digits = (celular || '').replace(/\D/g, '');
+        if (digits.length === 10 || digits.length === 11) return '55' + digits;
+        return digits ? '55' + digits : '';
+      }
+
+      function renderList(boletos) {
+        const list = document.getElementById('list');
+        list.innerHTML = boletos.map(b => `
+          <div class="card" data-nosso-numero="${escapeAttr(b.nosso_numero)}" data-celular="${escapeAttr(b.celular)}" data-has-pix="${!!(b.pix_copia_cola && b.link_boleto)}" data-linha="${escapeAttr(b.linha_digitavel)}" data-pix="${escapeAttr(b.pix_copia_cola)}" data-link="${escapeAttr(b.link_boleto)}">
+            <div class="card-row"><span class="card-label">Nome</span><span class="card-value">${b.nome_associado || '-'}</span></div>
+            <div class="card-row"><span class="card-label">Placa</span><span class="card-value">${b.placa_veiculo || '-'}</span></div>
+            <div class="card-row"><span class="card-label">Modelo</span><span class="card-value">${b.modelo_veiculo || '-'}</span></div>
+            <div class="card-row"><span class="card-label">Vencimento</span><span class="card-value">${formatDate(b.data_vencimento)}</span></div>
+            <div class="card-row"><span class="card-label">Valor</span><span class="card-value">${formatMoney(b.valor_boleto)}</span></div>
+            <div class="card-row"><span class="card-label">Situação</span><span class="card-value">${b.situacao_boleto || '-'}</span></div>
+            <button type="button" class="btn btn-primary" data-action="dados">Dados do boleto</button>
+          </div>
+        `).join('');
+        list.querySelectorAll('[data-action="dados"]').forEach(btn => {
+          btn.addEventListener('click', () => openModal(btn.closest('.card')));
+        });
+      }
+
+      let modalNossoNumero = null;
+      let modalClienteId = null;
+      let modalConsultorId = null;
+      let modalCelular = '';
+      let modalDetalheSga = null;
+
+      function openModal(card) {
+        modalNossoNumero = card.dataset.nossoNumero;
+        modalClienteId = clienteId;
+        modalConsultorId = consultorId;
+        modalCelular = card.dataset.celular || '';
+        const hasPix = card.dataset.hasPix === 'true';
+        const linha = card.dataset.linha || '';
+        const pix = card.dataset.pix || '';
+        const link = card.dataset.link || '';
+        document.getElementById('modalTitle').textContent = 'Boleto ' + modalNossoNumero;
+        show(document.getElementById('modalLoading'), !hasPix);
+        document.getElementById('btnCarregarPagamento').style.display = hasPix ? 'none' : '';
+        const detEl = document.getElementById('modalDetalhe');
+        const actEl = document.getElementById('modalActions');
+        if (hasPix && linha && (pix || link)) {
+          detEl.style.display = 'none';
+          actEl.style.display = 'flex';
+          modalDetalheSga = [{ linha_digitavel: linha, pix: { copia_cola: pix }, link_boleto: link, short_link: link }];
+          bindDetailButtons();
+        } else {
+          detEl.style.display = 'none';
+          detEl.innerHTML = '';
+          actEl.style.display = 'none';
+          modalDetalheSga = null;
+          const btnCarregar = document.getElementById('btnCarregarPagamento');
+          btnCarregar.disabled = false;
+          btnCarregar.textContent = 'Carregar dados para pagamento';
+          btnCarregar.onclick = () => fetchDetalhe();
+        }
+        document.getElementById('modalOverlay').classList.add('open');
+      }
+
+      function copyAndOpenWhatsApp(text) {
+        if (!text) return;
+        const waNumber = celularParaWhatsApp(modalCelular);
+        const copyDone = () => {
+          if (waNumber) window.open('https://wa.me/' + waNumber + '?text=' + encodeURIComponent(text), '_blank');
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(copyDone).catch(() => { fallbackCopy(text); copyDone(); });
+        } else {
+          fallbackCopy(text);
+          copyDone();
+        }
+      }
+
+      function fallbackCopy(text) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+      }
+
+      function bindDetailButtons() {
+        const d = modalDetalheSga && modalDetalheSga[0];
+        if (!d) return;
+        if (d.celular) modalCelular = d.celular;
+        document.getElementById('btnCopiarLinha').onclick = () => copyAndOpenWhatsApp(d.linha_digitavel);
+        document.getElementById('btnCopiarPix').onclick = () => copyAndOpenWhatsApp(d.pix && d.pix.copia_cola);
+        const link = d.link_boleto || d.short_link || '';
+        document.getElementById('btnEnviarPdf').onclick = () => {
+          if (link && celularParaWhatsApp(modalCelular)) window.open('https://wa.me/' + celularParaWhatsApp(modalCelular) + '?text=' + encodeURIComponent(link), '_blank');
+        };
+      }
+
+      async function fetchDetalhe() {
+        const btn = document.getElementById('btnCarregarPagamento');
+        const nossoNumeroAtRequest = modalNossoNumero;
+        btn.disabled = true;
+        btn.textContent = 'Carregando...';
+        const url = apiBase + '/api/boletos/detalhe/' + encodeURIComponent(modalNossoNumero) + '?cliente_id=' + encodeURIComponent(modalClienteId) + (modalConsultorId ? '&consultor_id=' + encodeURIComponent(modalConsultorId) : '');
+        try {
+          const res = await fetch(url, { headers: { 'X-API-Key': apiKey } });
+          if (modalNossoNumero !== nossoNumeroAtRequest) return;
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          if (modalNossoNumero !== nossoNumeroAtRequest) return;
+          modalDetalheSga = Array.isArray(data) ? data : [data];
+          const d = modalDetalheSga[0];
+          if (!d) throw new Error('Resposta inválida');
+          document.getElementById('modalLoading').style.display = 'none';
+          btn.style.display = 'none';
+          const detEl = document.getElementById('modalDetalhe');
+          detEl.innerHTML = `
+            <div class="detalhe-grid">
+              <div class="detalhe-item"><span class="label">Associado</span><span class="value">${d.nome_associado || '-'}</span></div>
+              <div class="detalhe-item"><span class="label">Vencimento</span><span class="value">${formatDate(d.data_vencimento)}</span></div>
+              <div class="detalhe-item"><span class="label">Valor</span><span class="value">${formatMoney(d.valor_boleto)}</span></div>
+              <div class="detalhe-item"><span class="label">Situação</span><span class="value">${d.descricao_situacao_boleto || d.codigo_situacao_boleto || '-'}</span></div>
+            </div>
+          `;
+          detEl.style.display = 'block';
+          document.getElementById('modalActions').style.display = 'flex';
+          bindDetailButtons();
+        } catch (e) {
+          if (modalNossoNumero !== nossoNumeroAtRequest) return;
+          btn.disabled = false;
+          btn.textContent = 'Carregar dados para pagamento';
+          alert('Erro ao carregar: ' + (e.message || 'Tente novamente.'));
+        }
+      }
+
+      document.getElementById('modalOverlay').addEventListener('click', function(e) {
+        if (e.target === this) this.classList.remove('open');
+      });
+
+      const searchInput = document.getElementById('searchInput');
+      if (searchInput) searchInput.addEventListener('input', applySearch);
+
+      (async function init() {
+        applyLogo();
+        updateHeaderTitle();
+        if (token) await resolveToken();
+        await loadBoletos();
+      })();
+    })();
+  </script>
+</body>
+</html>
