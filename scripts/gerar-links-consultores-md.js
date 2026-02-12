@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
-const BASE_URL = (process.env.APP_BASE_URL || 'https://centraldoconsultor-production.up.railway.app').replace(/\/$/, '');
+const BASE_URL = (process.env.APP_BASE_URL || 'https://centralconsultor.atomos.tech').replace(/\/$/, '');
 const OUT_FILE = path.join(__dirname, '..', 'links-consultores-central.md');
 
 function formatTelefone(contato) {

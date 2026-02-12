@@ -388,12 +388,17 @@
       function formatDate(d) {
         if (!d) return '-';
         const s = String(d).trim();
-        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-          const [, ano, mes, dia] = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        const match = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (match) {
+          const [, ano, mes, dia] = match;
           return dia + '/' + mes + '/' + ano;
         }
         const x = new Date(d);
-        return isNaN(x.getTime()) ? d : x.toLocaleDateString('pt-BR');
+        if (isNaN(x.getTime())) return d;
+        const dia = String(x.getDate()).padStart(2, '0');
+        const mes = String(x.getMonth() + 1).padStart(2, '0');
+        const ano = x.getFullYear();
+        return dia + '/' + mes + '/' + ano;
       }
 
       function formatMoney(n) {

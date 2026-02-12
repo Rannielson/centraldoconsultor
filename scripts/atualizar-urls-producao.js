@@ -1,6 +1,6 @@
 /**
  * Atualiza url_completa em links_consultor para a URL de produção.
- * Uso: APP_BASE_URL=https://centraldoconsultor-production.up.railway.app node scripts/atualizar-urls-producao.js
+ * Uso: APP_BASE_URL=https://centralconsultor.atomos.tech node scripts/atualizar-urls-producao.js
  */
 import pg from 'pg';
 import dotenv from 'dotenv';
@@ -10,7 +10,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
-const BASE_URL = (process.env.APP_BASE_URL || 'https://centraldoconsultor-production.up.railway.app').replace(/\/$/, '');
+const BASE_URL = (process.env.APP_BASE_URL || 'https://centralconsultor.atomos.tech').replace(/\/$/, '');
 
 async function main() {
   if (!process.env.DATABASE_URL) {

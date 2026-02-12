@@ -1,7 +1,7 @@
 /**
  * Gera apenas os links_consultor para competência existente (boletos já no banco).
  * Usa APP_BASE_URL de produção para url_completa.
- * Uso: APP_BASE_URL=https://centraldoconsultor-production.up.railway.app node scripts/gerar-links-producao.js
+ * Uso: APP_BASE_URL=https://centralconsultor.atomos.tech node scripts/gerar-links-producao.js
  */
 import 'dotenv/config';
 import { gerarLinksParaCompetencia } from '../src/services/consultorLinksService.js';
@@ -12,7 +12,7 @@ const COMPETENCIA = process.env.COMPETENCIA || '02/2026';
 async function main() {
   const baseUrl = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
   if (!baseUrl) {
-    console.error('❌ Defina APP_BASE_URL (ex.: https://centraldoconsultor-production.up.railway.app)');
+    console.error('❌ Defina APP_BASE_URL (ex.: https://centralconsultor.atomos.tech)');
     process.exit(1);
   }
   console.log('Base URL:', baseUrl);
