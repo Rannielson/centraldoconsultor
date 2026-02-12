@@ -608,15 +608,29 @@
           if (!res.ok) throw new Error(await res.text());
           const data = await res.json();
           if (modalNossoNumero !== nossoNumeroAtRequest) return;
-          modalDetalheSga = Array.isArray(data) ? data : [data];
-          const d = modalDetalheSga[0];
-          if (!d) throw new Error('Resposta inválida');
+          const raw = Array.isArray(data) ? data[0] : data;
+          if (!raw) throw new Error('Resposta inválida');
+          const d = {
+            nome_associado: raw.nome_associado || raw.nomeAssociado || '-',
+            data_vencimento: raw.data_vencimento || raw.dataVencimento,
+            valor_boleto: raw.valor_boleto ?? raw.valorBoleto,
+            descricao_situacao_boleto: raw.descricao_situacao_boleto || raw.descricaoSituacaoBoleto,
+            codigo_situacao_boleto: raw.codigo_situacao_boleto || raw.codigoSituacaoBoleto,
+            celular: raw.celular || raw.associado?.celular,
+            linha_digitavel: raw.linha_digitavel || raw.linhaDigitavel || raw.codigo_barras || raw.codigoBarras || '',
+            pix: raw.pix ? { copia_cola: raw.pix.copia_cola || raw.pix.copiaCola || '' } : { copia_cola: raw.pix_copia_cola || raw.pixCopiaCola || '' },
+            link_boleto: raw.link_boleto || raw.linkBoleto || '',
+            short_link: raw.short_link || raw.shortLink || raw.link_boleto || raw.linkBoleto || ''
+          };
+          if (d.pix && !d.pix.copia_cola) d.pix.copia_cola = '';
+          modalDetalheSga = [d];
+          if (d.celular) modalCelular = d.celular;
           document.getElementById('modalLoading').style.display = 'none';
           btn.style.display = 'none';
           const detEl = document.getElementById('modalDetalhe');
           detEl.innerHTML = `
             <div class="detalhe-grid">
-              <div class="detalhe-item"><span class="label">Associado</span><span class="value">${d.nome_associado || '-'}</span></div>
+              <div class="detalhe-item"><span class="label">Associado</span><span class="value">${d.nome_associado}</span></div>
               <div class="detalhe-item"><span class="label">Vencimento</span><span class="value">${formatDate(d.data_vencimento)}</span></div>
               <div class="detalhe-item"><span class="label">Valor</span><span class="value">${formatMoney(d.valor_boleto)}</span></div>
               <div class="detalhe-item"><span class="label">Situação</span><span class="value">${d.descricao_situacao_boleto || d.codigo_situacao_boleto || '-'}</span></div>
