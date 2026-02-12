@@ -7,7 +7,7 @@ import 'dotenv/config';
 import { gerarLinksParaCompetencia } from '../src/services/consultorLinksService.js';
 
 const CLIENTE_PROSEG_ID = 'e0d6c78b-cbe1-4af3-8e3d-37503a70c2f9';
-const COMPETENCIA = '01/2026';
+const COMPETENCIA = process.env.COMPETENCIA || '02/2026';
 
 async function main() {
   const baseUrl = (process.env.APP_BASE_URL || '').replace(/\/$/, '');

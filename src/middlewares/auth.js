@@ -6,7 +6,7 @@ import { query } from '../config/database.js';
  */
 export async function authenticateApiKey(request, reply) {
   try {
-    const apiKey = request.headers['x-api-key'];
+    const apiKey = (request.headers['x-api-key'] || '').trim();
     
     // Verifica se a API Key foi fornecida
     if (!apiKey) {

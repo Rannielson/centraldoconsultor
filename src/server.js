@@ -53,7 +53,8 @@ fastify.get('/app/s/:code', async (request, reply) => {
   const { resolverPorShortCode } = await import('./services/consultorLinksService.js');
   const data = await resolverPorShortCode(code);
   if (!data) return reply.code(404).type('text/html').send('<h1>Link inválido ou expirado</h1>');
-  const webappKey = keyFromUrl || process.env.WEBAPP_API_KEY || process.env.MASTER_API_KEY || '';
+  const rawKey = keyFromUrl || process.env.WEBAPP_API_KEY || process.env.MASTER_API_KEY || '';
+  const webappKey = String(rawKey).trim();
   const logoUrl = (data.logo_url && String(data.logo_url).trim()) || '';
   const indexPath = path.join(publicDir, 'index.html');
   if (!fs.existsSync(indexPath)) return reply.code(404).send('Not found');
@@ -61,7 +62,18 @@ fastify.get('/app/s/:code', async (request, reply) => {
   const configScript = `<script>window.__CONFIG__=${JSON.stringify({ token: data.slug, apiKey: webappKey, logoUrl })};</script>`;
   if (!html.includes('</head>')) html = configScript + html;
   else html = html.replace('</head>', configScript + '\n</head>');
+  reply.header('Cache-Control', 'no-store, no-cache, must-revalidate');
   reply.type('text/html').send(html);
+});
+
+// Diagnóstico: verifica se a key para /app/s/:code está configurada (sem revelar o valor)
+fastify.get('/api/config-status', async (request, reply) => {
+  const raw = process.env.WEBAPP_API_KEY || process.env.MASTER_API_KEY || '';
+  const configured = String(raw).trim().length > 0;
+  return {
+    webappKeyConfigured: configured,
+    hint: configured ? 'Key configurada no servidor.' : 'Defina MASTER_API_KEY ou WEBAPP_API_KEY no Railway (variáveis de ambiente).'
+  };
 });
 
 // Health check endpoint (sem autenticação)
