@@ -244,6 +244,7 @@
       const params = new URLSearchParams(location.search);
       const config = window.__CONFIG__ || {};
       let token = config.token || params.get('token');
+      let shortCode = config.shortCode || '';
       let clienteId = params.get('cliente_id');
       let consultorId = params.get('consultor_id');
       let nomeConsultor = '';
@@ -298,6 +299,35 @@
       }
 
       async function loadBoletos() {
+        if (shortCode) {
+          const res = await fetch(apiBase + '/api/boletos-por-short/' + encodeURIComponent(shortCode));
+          if (!res.ok) {
+            setError(res.status === 404 ? 'Link inválido ou expirado.' : 'Erro ao carregar boletos: ' + (await res.text()));
+            return;
+          }
+          const data = await res.json();
+          if (data.cliente_id) clienteId = data.cliente_id;
+          if (data.consultor_id) consultorId = data.consultor_id;
+          if (data.nome_consultor) nomeConsultor = data.nome_consultor;
+          if (data.cliente && data.cliente.logo_url) { logoUrl = data.cliente.logo_url; applyLogo(); }
+          show(document.getElementById('loading'), false);
+          if (!data.boletos || data.boletos.length === 0) {
+            show(document.getElementById('empty'), true);
+            show(document.getElementById('searchWrap'), false);
+            return;
+          }
+          const raw = (data.boletos || []).slice().sort((a, b) => {
+            const da = a.data_vencimento ? new Date(a.data_vencimento).getTime() : 0;
+            const db = b.data_vencimento ? new Date(b.data_vencimento).getTime() : 0;
+            return da - db;
+          });
+          allBoletos = raw;
+          if (!nomeConsultor && raw[0] && raw[0].consultor && raw[0].consultor.nome) nomeConsultor = raw[0].consultor.nome;
+          updateHeaderTitle();
+          show(document.getElementById('searchWrap'), true);
+          applySearch();
+          return;
+        }
         if (!clienteId || !consultorId) {
           setError('Link inválido. Falta cliente_id e consultor_id ou token.');
           return;
@@ -479,9 +509,11 @@
         const nossoNumeroAtRequest = modalNossoNumero;
         btn.disabled = true;
         btn.textContent = 'Carregando...';
-        const url = apiBase + '/api/boletos/detalhe/' + encodeURIComponent(modalNossoNumero) + '?cliente_id=' + encodeURIComponent(modalClienteId) + (modalConsultorId ? '&consultor_id=' + encodeURIComponent(modalConsultorId) : '');
+        const url = shortCode
+          ? apiBase + '/api/boletos-por-short/' + encodeURIComponent(shortCode) + '/detalhe/' + encodeURIComponent(modalNossoNumero)
+          : apiBase + '/api/boletos/detalhe/' + encodeURIComponent(modalNossoNumero) + '?cliente_id=' + encodeURIComponent(modalClienteId) + (modalConsultorId ? '&consultor_id=' + encodeURIComponent(modalConsultorId) : '');
         try {
-          const res = await fetch(url, { headers: { 'X-API-Key': apiKey } });
+          const res = await fetch(url, shortCode ? {} : { headers: { 'X-API-Key': apiKey } });
           if (modalNossoNumero !== nossoNumeroAtRequest) return;
           if (!res.ok) throw new Error(await res.text());
           const data = await res.json();

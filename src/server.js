@@ -59,7 +59,7 @@ fastify.get('/app/s/:code', async (request, reply) => {
   const indexPath = path.join(publicDir, 'index.html');
   if (!fs.existsSync(indexPath)) return reply.code(404).send('Not found');
   let html = fs.readFileSync(indexPath, 'utf8');
-  const configScript = `<script>window.__CONFIG__=${JSON.stringify({ token: data.slug, apiKey: webappKey, logoUrl })};</script>`;
+  const configScript = `<script>window.__CONFIG__=${JSON.stringify({ token: data.slug, shortCode: code, apiKey: webappKey, logoUrl })};</script>`;
   if (!html.includes('</head>')) html = configScript + html;
   else html = html.replace('</head>', configScript + '\n</head>');
   reply.header('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -74,6 +74,70 @@ fastify.get('/api/config-status', async (request, reply) => {
     webappKeyConfigured: configured,
     hint: configured ? 'Key configurada no servidor.' : 'Defina MASTER_API_KEY ou WEBAPP_API_KEY no Railway (variáveis de ambiente).'
   };
+});
+
+// ========== Acesso por short code (SEM API Key) — mais prático para links /app/s/:code ==========
+// GET /api/boletos-por-short/:code/detalhe/:nossoNumero — detalhe do boleto (PIX, PDF)
+fastify.get('/api/boletos-por-short/:code/detalhe/:nossoNumero', async (request, reply) => {
+  try {
+    const { code, nossoNumero } = request.params;
+    const { resolverPorShortCode } = await import('./services/consultorLinksService.js');
+    const { query } = await import('./config/database.js');
+    const { buscarBoletoPorNossoNumero } = await import('./services/sgaService.js');
+    const data = await resolverPorShortCode(code);
+    if (!data) return reply.code(404).send({ error: 'Link inválido', message: 'Código não encontrado.' });
+    const boletoCheck = await query(
+      'SELECT id FROM boletos WHERE cliente_id = $1 AND consultor_id = $2 AND nosso_numero = $3',
+      [data.cliente_id, data.consultor_id, nossoNumero]
+    );
+    if (boletoCheck.rows.length === 0) return reply.code(404).send({ error: 'Não encontrado', message: 'Boleto não encontrado.' });
+    const clienteResult = await query(
+      'SELECT token_bearer, url_base_api FROM clientes WHERE id = $1 AND ativo = true',
+      [data.cliente_id]
+    );
+    if (clienteResult.rows.length === 0) return reply.code(404).send({ error: 'Cliente não encontrado' });
+    const cliente = clienteResult.rows[0];
+    const resposta = await buscarBoletoPorNossoNumero(cliente.token_bearer, cliente.url_base_api, nossoNumero);
+    if (!resposta || resposta.length === 0) return reply.code(404).send({ error: 'Boleto não encontrado na SGA' });
+    const item = resposta[0];
+    const pixCopiaCola = item.pix?.copia_cola || null;
+    const linkBoleto = item.link_boleto || item.short_link || null;
+    await query(
+      'UPDATE boletos SET pix_copia_cola = $1, link_boleto = $2, updated_at = CURRENT_TIMESTAMP WHERE cliente_id = $3 AND nosso_numero = $4',
+      [pixCopiaCola, linkBoleto, data.cliente_id, nossoNumero]
+    );
+    return reply.send(resposta);
+  } catch (err) {
+    console.error('Erro boletos-por-short detalhe:', err);
+    return reply.code(500).send({ error: 'Erro interno', message: err.message });
+  }
+});
+
+// GET /api/boletos-por-short/:code — lista boletos do consultor (sem API Key)
+fastify.get('/api/boletos-por-short/:code', async (request, reply) => {
+  try {
+    const { code } = request.params;
+    const { resolverPorShortCode } = await import('./services/consultorLinksService.js');
+    const { listarBoletos } = await import('./services/boletoService.js');
+    const data = await resolverPorShortCode(code);
+    if (!data) return reply.code(404).send({ error: 'Link inválido', message: 'Código não encontrado.' });
+    const resultado = await listarBoletos({
+      cliente_id: data.cliente_id,
+      consultor_id: data.consultor_id,
+      limit: 500,
+      page: 1
+    });
+    return reply.send({
+      success: true,
+      ...resultado,
+      nome_consultor: data.nome_consultor,
+      cliente_id: data.cliente_id,
+      consultor_id: data.consultor_id
+    });
+  } catch (err) {
+    console.error('Erro boletos-por-short:', err);
+    return reply.code(500).send({ error: 'Erro interno', message: err.message });
+  }
 });
 
 // Health check endpoint (sem autenticação)
