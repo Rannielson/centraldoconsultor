@@ -1,5 +1,9 @@
+import dns from 'dns';
 import pg from 'pg';
 import dotenv from 'dotenv';
+
+// Força IPv4 na resolução DNS (evita ENETUNREACH em ambientes sem IPv6, ex.: Railway + Supabase)
+dns.setDefaultResultOrder('ipv4first');
 
 dotenv.config();
 
