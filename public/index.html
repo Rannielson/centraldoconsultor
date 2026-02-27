@@ -179,9 +179,11 @@
     .modal-overlay.open .modal { transform: translateY(0); }
     .modal h2 { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; color: var(--foreground); }
     .modal-actions { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 1.25rem; }
-    .copy-notification { margin-top: 1rem; padding: 1rem; background: var(--muted); border-radius: 8px; }
-    .copy-notification-text { margin: 0 0 0.75rem 0; font-size: 0.95rem; color: var(--foreground); }
-    .copy-notification-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .copy-notification { margin-top: 1.25rem; padding: 1.25rem; background: linear-gradient(135deg, var(--muted) 0%, color-mix(in oklch, var(--muted) 90%, var(--accent)) 100%); border-radius: 12px; border: 1px solid color-mix(in oklch, var(--border) 50%, transparent); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .copy-notification-badge { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; font-weight: 600; color: var(--primary); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.5rem; }
+    .copy-notification-text { margin: 0 0 0.5rem 0; font-size: 0.95rem; color: var(--foreground); line-height: 1.45; }
+    .copy-notification-tel { font-weight: 600; color: var(--primary); font-variant-numeric: tabular-nums; }
+    .copy-notification-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem; }
     .modal-loading { text-align: center; padding: 1.5rem; color: var(--muted-foreground); }
     .detalhe-grid { display: grid; gap: 0.75rem; }
     .detalhe-item { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 1rem; }
@@ -227,7 +229,8 @@
         <button type="button" class="btn btn-primary" id="btnCarregarPagamento">Carregar dados para pagamento</button>
         <div id="modalDetalhe" style="display:none;"></div>
         <div id="copyNotification" class="copy-notification" style="display:none;">
-          <p class="copy-notification-text">Copiado! Deseja enviar para o contato cadastrado no sistema (<span id="copyNotificationTel"></span>) no WhatsApp?</p>
+          <div class="copy-notification-badge">✓ Copiado</div>
+          <p class="copy-notification-text">Enviar a mensagem para o contato <span id="copyNotificationTel" class="copy-notification-tel"></span> no WhatsApp?</p>
           <div class="copy-notification-actions">
             <button type="button" class="btn btn-primary" id="copyNotificationEnviar">Enviar no WhatsApp</button>
             <button type="button" class="btn btn-secondary" id="copyNotificationVoltar">Voltar</button>
@@ -245,6 +248,10 @@
           <button type="button" class="btn btn-secondary btn-with-icon" id="btnEnviarPdf">
             <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg></span>
             <span>Baixar PDF</span>
+          </button>
+          <button type="button" class="btn btn-secondary btn-with-icon" id="btnBuscarAtualizado">
+            <span class="btn-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg></span>
+            <span>Buscar boleto atualizado</span>
           </button>
         </div>
       </div>
@@ -516,8 +523,8 @@
       function formatTelefoneDisplay(celular) {
         if (!celular) return 'não cadastrado';
         const d = (celular || '').replace(/\D/g, '');
-        if (d.length === 11) return '(' + d.slice(0, 2) + ') ' + d.slice(2, 7) + '-' + d.slice(7);
-        if (d.length === 10) return '(' + d.slice(0, 2) + ') ' + d.slice(2, 6) + '-' + d.slice(6);
+        if (d.length === 11) return d.slice(0, 2) + ' ' + d.slice(2, 7) + '-' + d.slice(7);
+        if (d.length === 10) return d.slice(0, 2) + ' ' + d.slice(2, 6) + '-' + d.slice(6);
         return celular;
       }
 
@@ -592,6 +599,42 @@
             alert('Erro ao baixar PDF: ' + (e.message || 'Tente novamente.'));
           }
         };
+        const btnBuscar = document.getElementById('btnBuscarAtualizado');
+        if (btnBuscar) btnBuscar.onclick = () => buscarBoletoAtualizado();
+      }
+
+      function applyDetalheData(data) {
+        const raw = Array.isArray(data) ? data[0] : data;
+        if (!raw) return;
+        const d = {
+          nome_associado: raw.nome_associado || raw.nomeAssociado || '-',
+          data_vencimento: raw.data_vencimento || raw.dataVencimento,
+          valor_boleto: raw.valor_boleto ?? raw.valorBoleto,
+          descricao_situacao_boleto: raw.descricao_situacao_boleto || raw.descricaoSituacaoBoleto,
+          codigo_situacao_boleto: raw.codigo_situacao_boleto || raw.codigoSituacaoBoleto,
+          celular: raw.celular || raw.associado?.celular,
+          linha_digitavel: raw.linha_digitavel || raw.linhaDigitavel || raw.codigo_barras || raw.codigoBarras || '',
+          pix: raw.pix ? { copia_cola: raw.pix.copia_cola || raw.pix.copiaCola || '' } : { copia_cola: raw.pix_copia_cola || raw.pixCopiaCola || '' },
+          link_boleto: raw.link_boleto || raw.linkBoleto || '',
+          short_link: raw.short_link || raw.shortLink || raw.link_boleto || raw.linkBoleto || ''
+        };
+        if (d.pix && !d.pix.copia_cola) d.pix.copia_cola = '';
+        modalDetalheSga = [d];
+        if (d.celular) modalCelular = d.celular;
+        const detEl = document.getElementById('modalDetalhe');
+        detEl.innerHTML = `
+          <div class="detalhe-grid">
+            <div class="detalhe-item"><span class="label">Associado</span><span class="value">${d.nome_associado}</span></div>
+            <div class="detalhe-item"><span class="label">Vencimento</span><span class="value">${formatDate(d.data_vencimento)}</span></div>
+            <div class="detalhe-item"><span class="label">Valor</span><span class="value">${formatMoney(d.valor_boleto)}</span></div>
+            <div class="detalhe-item"><span class="label">Situação</span><span class="value">${d.descricao_situacao_boleto || d.codigo_situacao_boleto || '-'}</span></div>
+          </div>
+        `;
+        detEl.style.display = 'block';
+        document.getElementById('modalActions').style.display = 'flex';
+        resetActionButtons();
+        hideCopyNotification();
+        bindDetailButtons();
       }
 
       async function fetchDetalhe() {
@@ -608,44 +651,34 @@
           if (!res.ok) throw new Error(await res.text());
           const data = await res.json();
           if (modalNossoNumero !== nossoNumeroAtRequest) return;
-          const raw = Array.isArray(data) ? data[0] : data;
-          if (!raw) throw new Error('Resposta inválida');
-          const d = {
-            nome_associado: raw.nome_associado || raw.nomeAssociado || '-',
-            data_vencimento: raw.data_vencimento || raw.dataVencimento,
-            valor_boleto: raw.valor_boleto ?? raw.valorBoleto,
-            descricao_situacao_boleto: raw.descricao_situacao_boleto || raw.descricaoSituacaoBoleto,
-            codigo_situacao_boleto: raw.codigo_situacao_boleto || raw.codigoSituacaoBoleto,
-            celular: raw.celular || raw.associado?.celular,
-            linha_digitavel: raw.linha_digitavel || raw.linhaDigitavel || raw.codigo_barras || raw.codigoBarras || '',
-            pix: raw.pix ? { copia_cola: raw.pix.copia_cola || raw.pix.copiaCola || '' } : { copia_cola: raw.pix_copia_cola || raw.pixCopiaCola || '' },
-            link_boleto: raw.link_boleto || raw.linkBoleto || '',
-            short_link: raw.short_link || raw.shortLink || raw.link_boleto || raw.linkBoleto || ''
-          };
-          if (d.pix && !d.pix.copia_cola) d.pix.copia_cola = '';
-          modalDetalheSga = [d];
-          if (d.celular) modalCelular = d.celular;
           document.getElementById('modalLoading').style.display = 'none';
           btn.style.display = 'none';
-          const detEl = document.getElementById('modalDetalhe');
-          detEl.innerHTML = `
-            <div class="detalhe-grid">
-              <div class="detalhe-item"><span class="label">Associado</span><span class="value">${d.nome_associado}</span></div>
-              <div class="detalhe-item"><span class="label">Vencimento</span><span class="value">${formatDate(d.data_vencimento)}</span></div>
-              <div class="detalhe-item"><span class="label">Valor</span><span class="value">${formatMoney(d.valor_boleto)}</span></div>
-              <div class="detalhe-item"><span class="label">Situação</span><span class="value">${d.descricao_situacao_boleto || d.codigo_situacao_boleto || '-'}</span></div>
-            </div>
-          `;
-          detEl.style.display = 'block';
-          document.getElementById('modalActions').style.display = 'flex';
-          resetActionButtons();
-          hideCopyNotification();
-          bindDetailButtons();
+          applyDetalheData(data);
         } catch (e) {
           if (modalNossoNumero !== nossoNumeroAtRequest) return;
           btn.disabled = false;
           btn.textContent = 'Carregar dados para pagamento';
           alert('Erro ao carregar: ' + (e.message || 'Tente novamente.'));
+        }
+      }
+
+      async function buscarBoletoAtualizado() {
+        const btn = document.getElementById('btnBuscarAtualizado');
+        const labelEl = getButtonLabelEl(btn);
+        const originalText = 'Buscar boleto atualizado';
+        if (btn) { btn.disabled = true; if (labelEl) labelEl.textContent = 'Buscando...'; }
+        const url = shortCode
+          ? apiBase + '/api/boletos-por-short/' + encodeURIComponent(shortCode) + '/detalhe/' + encodeURIComponent(modalNossoNumero)
+          : apiBase + '/api/boletos/detalhe/' + encodeURIComponent(modalNossoNumero) + '?cliente_id=' + encodeURIComponent(modalClienteId) + (modalConsultorId ? '&consultor_id=' + encodeURIComponent(modalConsultorId) : '');
+        try {
+          const res = await fetch(url, shortCode ? {} : { headers: { 'X-API-Key': apiKey } });
+          if (!res.ok) throw new Error(await res.text());
+          const data = await res.json();
+          applyDetalheData(data);
+        } catch (e) {
+          alert('Erro ao atualizar: ' + (e.message || 'Tente novamente.'));
+        } finally {
+          if (btn) { btn.disabled = false; if (labelEl) labelEl.textContent = originalText; }
         }
       }
 
