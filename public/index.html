@@ -205,6 +205,17 @@
     .copy-notification-tel { font-weight: 600; color: var(--primary); font-variant-numeric: tabular-nums; }
     .copy-notification-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem; }
     .modal-loading { text-align: center; padding: 1.5rem; color: var(--muted-foreground); }
+    .modal-info {
+      margin-top: 1rem;
+      padding: 1rem 1.25rem;
+      background: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      color: var(--foreground);
+      line-height: 1.45;
+    }
+    .modal-info::before { content: 'ℹ️ INFO'; display: block; font-size: 0.75rem; font-weight: 600; color: var(--muted-foreground); margin-bottom: 0.35rem; letter-spacing: 0.03em; }
     .detalhe-grid { display: grid; gap: 0.75rem; }
     .detalhe-item { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 1rem; }
     .detalhe-item .label { color: var(--muted-foreground); font-size: 0.8125rem; }
@@ -254,6 +265,7 @@
       <div id="modalBody">
         <p class="modal-loading" id="modalLoading">Clique no botão para carregar os dados de pagamento.</p>
         <button type="button" class="btn btn-primary" id="btnCarregarPagamento">Carregar dados para pagamento</button>
+        <div id="modalDetalheInfo" class="modal-info" style="display:none;" role="status"></div>
         <div id="modalDetalhe" style="display:none;"></div>
         <div id="copyNotification" class="copy-notification" style="display:none;">
           <div class="copy-notification-badge">✓ Copiado</div>
@@ -501,6 +513,7 @@
       let modalDetalheSga = null;
 
       function openModal(card) {
+        showModalInfo('', false);
         modalNossoNumero = card.dataset.nossoNumero;
         modalClienteId = clienteId;
         modalConsultorId = consultorId;
@@ -678,9 +691,17 @@
         bindDetailButtons();
       }
 
+      function showModalInfo(text, show) {
+        const el = document.getElementById('modalDetalheInfo');
+        if (!el) return;
+        el.textContent = text || '';
+        el.style.display = show && text ? 'block' : 'none';
+      }
+
       async function fetchDetalhe() {
         const btn = document.getElementById('btnCarregarPagamento');
         const nossoNumeroAtRequest = modalNossoNumero;
+        showModalInfo('', false);
         btn.disabled = true;
         btn.textContent = 'Carregando...';
         const url = shortCode
@@ -689,17 +710,28 @@
         try {
           const res = await fetch(url, shortCode ? {} : { headers: { 'X-API-Key': apiKey } });
           if (modalNossoNumero !== nossoNumeroAtRequest) return;
-          if (!res.ok) throw new Error(await res.text());
-          const data = await res.json();
+          const text = await res.text();
+          if (!res.ok) {
+            let info = text;
+            try { const j = JSON.parse(text); info = j.info || j.message || info; } catch (_) {}
+            showModalInfo(info);
+            btn.disabled = false;
+            btn.textContent = 'Carregar dados para pagamento';
+            return;
+          }
+          const data = JSON.parse(text);
           if (modalNossoNumero !== nossoNumeroAtRequest) return;
           document.getElementById('modalLoading').style.display = 'none';
           btn.style.display = 'none';
+          showModalInfo('', false);
           applyDetalheData(data);
         } catch (e) {
           if (modalNossoNumero !== nossoNumeroAtRequest) return;
           btn.disabled = false;
           btn.textContent = 'Carregar dados para pagamento';
-          alert('Erro ao carregar: ' + (e.message || 'Tente novamente.'));
+          let msg = e.message || 'Tente novamente.';
+          try { const j = JSON.parse(msg); msg = j.info || j.message || msg; } catch (_) {}
+          showModalInfo(msg);
         }
       }
 
@@ -707,17 +739,26 @@
         const btn = document.getElementById('btnBuscarAtualizado');
         const labelEl = getButtonLabelEl(btn);
         const originalText = 'Buscar boleto atualizado';
+        showModalInfo('', false);
         if (btn) { btn.disabled = true; if (labelEl) labelEl.textContent = 'Buscando...'; }
         const url = shortCode
           ? apiBase + '/api/boletos-por-short/' + encodeURIComponent(shortCode) + '/detalhe/' + encodeURIComponent(modalNossoNumero)
           : apiBase + '/api/boletos/detalhe/' + encodeURIComponent(modalNossoNumero) + '?cliente_id=' + encodeURIComponent(modalClienteId) + (modalConsultorId ? '&consultor_id=' + encodeURIComponent(modalConsultorId) : '');
         try {
           const res = await fetch(url, shortCode ? {} : { headers: { 'X-API-Key': apiKey } });
-          if (!res.ok) throw new Error(await res.text());
-          const data = await res.json();
+          const text = await res.text();
+          if (!res.ok) {
+            let info = text;
+            try { const j = JSON.parse(text); info = j.info || j.message || info; } catch (_) {}
+            showModalInfo(info);
+            return;
+          }
+          const data = JSON.parse(text);
           applyDetalheData(data);
         } catch (e) {
-          alert('Erro ao atualizar: ' + (e.message || 'Tente novamente.'));
+          let msg = e.message || 'Tente novamente.';
+          try { const j = JSON.parse(msg); msg = j.info || j.message || msg; } catch (_) {}
+          showModalInfo(msg);
         } finally {
           if (btn) { btn.disabled = false; if (labelEl) labelEl.textContent = originalText; }
         }

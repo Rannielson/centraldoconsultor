@@ -122,8 +122,23 @@ fastify.get('/api/boletos-por-short/:code/detalhe/:nossoNumero', async (request,
     );
     if (clienteResult.rows.length === 0) return reply.code(404).send({ error: 'Cliente não encontrado' });
     const cliente = clienteResult.rows[0];
-    const resposta = await buscarBoletoPorNossoNumero(cliente.token_bearer, cliente.url_base_api, nossoNumero);
-    if (!resposta || resposta.length === 0) return reply.code(404).send({ error: 'Boleto não encontrado na SGA' });
+    let resposta;
+    try {
+      resposta = await buscarBoletoPorNossoNumero(cliente.token_bearer, cliente.url_base_api, nossoNumero);
+    } catch (err) {
+      return reply.code(502).send({
+        error: 'Erro ao consultar Hinova',
+        message: err.message,
+        info: err.message
+      });
+    }
+    if (!resposta || resposta.length === 0) {
+      return reply.code(404).send({
+        error: 'Boleto não encontrado na SGA',
+        message: 'A API Hinova não retornou dados para este boleto.',
+        info: 'A API Hinova (SGA) não retornou dados para este nosso número. Possíveis causas: boleto não encontrado no sistema da Hinova ou serviço temporariamente indisponível.'
+      });
+    }
     const item = resposta[0];
     const pixCopiaCola = item.pix?.copia_cola || null;
     const linkBoleto = item.link_boleto || item.short_link || null;
@@ -134,7 +149,11 @@ fastify.get('/api/boletos-por-short/:code/detalhe/:nossoNumero', async (request,
     return reply.send(resposta);
   } catch (err) {
     console.error('Erro boletos-por-short detalhe:', err);
-    return reply.code(500).send({ error: 'Erro interno', message: err.message });
+    return reply.code(500).send({
+      error: 'Erro interno',
+      message: err.message,
+      info: err.message
+    });
   }
 });
 

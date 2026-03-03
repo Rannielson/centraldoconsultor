@@ -180,14 +180,21 @@ export async function buscarBoletoPorNossoNumero(tokenBearer, urlBase, nossoNume
     if (error.response) {
       const status = error.response.status;
       const data = error.response.data;
-      if (status === 401) throw new Error('Token de autenticação inválido ou expirado');
-      if (status === 403) throw new Error('Acesso negado pela API SGA');
-      if (status === 404) throw new Error('Boleto não encontrado na SGA');
-      if (status >= 500) throw new Error('Erro interno na API SGA');
-      throw new Error(data?.message || error.message);
+      if (status === 401) throw new Error('Token de autenticação inválido ou expirado. A API Hinova recusou o acesso.');
+      if (status === 403) throw new Error('Acesso negado pela API Hinova (SGA).');
+      if (status === 404) throw new Error('Boleto não encontrado na Hinova para este nosso número.');
+      if (status >= 500) throw new Error('Erro interno na API Hinova (servidor deles). Tente novamente em instantes.');
+      throw new Error(data?.message || error.message || 'Erro na resposta da Hinova.');
     }
-    if (error.request) throw new Error('Não foi possível conectar à API SGA.');
-    throw new Error(error.message || 'Erro ao buscar boleto');
+    if (error.request) {
+      const code = error.code || '';
+      if (code === 'ECONNABORTED') throw new Error('A API Hinova demorou mais de 30 segundos para responder (timeout). Tente novamente.');
+      if (code === 'ENOTFOUND') throw new Error('Não foi possível alcançar o servidor da Hinova (DNS/rede). Verifique sua conexão.');
+      if (code === 'ECONNREFUSED') throw new Error('Conexão com a Hinova recusada. Serviço pode estar fora do ar.');
+      if (code === 'ETIMEDOUT') throw new Error('Tempo esgotado ao conectar na Hinova. Tente novamente.');
+      throw new Error('Não foi possível conectar à API Hinova. Verifique sua conexão ou tente mais tarde.');
+    }
+    throw new Error(error.message || 'Erro ao buscar boleto na Hinova.');
   }
 }
 

@@ -238,15 +238,25 @@ export default async function boletosRoutes(fastify, options) {
           message: 'Boleto não encontrado para este cliente'
         });
       }
-      const resposta = await buscarBoletoPorNossoNumero(
-        cliente.token_bearer,
-        cliente.url_base_api,
-        nossoNumero
-      );
+      let resposta;
+      try {
+        resposta = await buscarBoletoPorNossoNumero(
+          cliente.token_bearer,
+          cliente.url_base_api,
+          nossoNumero
+        );
+      } catch (err) {
+        return reply.code(502).send({
+          error: 'Erro ao consultar Hinova',
+          message: err.message,
+          info: err.message
+        });
+      }
       if (!resposta || resposta.length === 0) {
         return reply.code(404).send({
           error: 'Não encontrado',
-          message: 'Boleto não encontrado na SGA'
+          message: 'A API Hinova não retornou dados para este boleto.',
+          info: 'A API Hinova (SGA) não retornou dados para este nosso número. Possíveis causas: boleto não encontrado no sistema da Hinova ou serviço temporariamente indisponível.'
         });
       }
       const item = resposta[0];
@@ -261,7 +271,8 @@ export default async function boletosRoutes(fastify, options) {
       console.error('Erro ao buscar detalhe do boleto:', error);
       return reply.code(500).send({
         error: 'Erro interno',
-        message: error.message || 'Erro ao buscar detalhe do boleto'
+        message: error.message || 'Erro ao buscar detalhe do boleto',
+        info: error.message || 'Erro ao buscar detalhe do boleto'
       });
     }
   });
