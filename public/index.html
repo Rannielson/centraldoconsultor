@@ -659,7 +659,7 @@
 
       function applyDetalheData(data) {
         const raw = Array.isArray(data) ? data[0] : data;
-        if (!raw) return;
+        if (!raw) return false;
         const d = {
           nome_associado: raw.nome_associado || raw.nomeAssociado || '-',
           data_vencimento: raw.data_vencimento || raw.dataVencimento,
@@ -673,6 +673,8 @@
           short_link: raw.short_link || raw.shortLink || raw.link_boleto || raw.linkBoleto || ''
         };
         if (d.pix && !d.pix.copia_cola) d.pix.copia_cola = '';
+        const temDados = (d.nome_associado && d.nome_associado !== '-') || d.data_vencimento || (d.valor_boleto != null && d.valor_boleto !== '') || (d.linha_digitavel && d.linha_digitavel.trim()) || (d.pix && d.pix.copia_cola && d.pix.copia_cola.trim());
+        if (!temDados) return false;
         modalDetalheSga = [d];
         if (d.celular) modalCelular = d.celular;
         const detEl = document.getElementById('modalDetalhe');
@@ -689,6 +691,7 @@
         resetActionButtons();
         hideCopyNotification();
         bindDetailButtons();
+        return true;
       }
 
       function showModalInfo(text, show) {
@@ -730,7 +733,15 @@
           document.getElementById('modalLoading').style.display = 'none';
           btn.style.display = 'none';
           showModalInfo('', false);
-          applyDetalheData(data);
+          if (!applyDetalheData(data)) {
+            document.getElementById('modalDetalhe').style.display = 'none';
+            document.getElementById('modalActions').style.display = 'none';
+            btn.style.display = '';
+            btn.disabled = false;
+            btn.textContent = 'Carregar dados para pagamento';
+            showModalInfo('Não foi possível carregar os dados do boleto. A resposta veio sem dados.');
+            return;
+          }
         } catch (e) {
           clearTimeout(timeoutId);
           if (modalNossoNumero !== nossoNumeroAtRequest) return;
@@ -768,7 +779,9 @@
             return;
           }
           const data = JSON.parse(text);
-          applyDetalheData(data);
+          if (!applyDetalheData(data)) {
+            showModalInfo('Não foi possível carregar os dados do boleto. A resposta veio sem dados.');
+          }
         } catch (e) {
           clearTimeout(timeoutId);
           const msg = e.name === 'AbortError'
