@@ -187,12 +187,8 @@ export async function buscarBoletoPorNossoNumero(tokenBearer, urlBase, nossoNume
       throw new Error(data?.message || error.message || 'Erro na resposta da Hinova.');
     }
     if (error.request) {
-      const code = error.code || '';
-      if (code === 'ECONNABORTED') throw new Error('A API Hinova demorou mais de 30 segundos para responder (timeout). Tente novamente.');
-      if (code === 'ENOTFOUND') throw new Error('Não foi possível alcançar o servidor da Hinova (DNS/rede). Verifique sua conexão.');
-      if (code === 'ECONNREFUSED') throw new Error('Conexão com a Hinova recusada. Serviço pode estar fora do ar.');
-      if (code === 'ETIMEDOUT') throw new Error('Tempo esgotado ao conectar na Hinova. Tente novamente.');
-      throw new Error('Não foi possível conectar à API Hinova. Verifique sua conexão ou tente mais tarde.');
+      // Timeout ou falha de conexão: exibir mensagem amigável para quem consulta o boleto
+      throw new Error('API Hinova fora do ar. Tente novamente em alguns minutos.');
     }
     throw new Error(error.message || 'Erro ao buscar boleto na Hinova.');
   }
