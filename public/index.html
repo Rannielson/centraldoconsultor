@@ -695,7 +695,7 @@
         const el = document.getElementById('modalDetalheInfo');
         if (!el) return;
         el.textContent = text || '';
-        el.style.display = show && text ? 'block' : 'none';
+        el.style.display = (show !== false && text) ? 'block' : 'none';
       }
 
       async function fetchDetalhe() {
@@ -707,8 +707,14 @@
         const url = shortCode
           ? apiBase + '/api/boletos-por-short/' + encodeURIComponent(shortCode) + '/detalhe/' + encodeURIComponent(modalNossoNumero)
           : apiBase + '/api/boletos/detalhe/' + encodeURIComponent(modalNossoNumero) + '?cliente_id=' + encodeURIComponent(modalClienteId) + (modalConsultorId ? '&consultor_id=' + encodeURIComponent(modalConsultorId) : '');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 35000);
         try {
-          const res = await fetch(url, shortCode ? {} : { headers: { 'X-API-Key': apiKey } });
+          const res = await fetch(url, {
+            signal: controller.signal,
+            ...(shortCode ? {} : { headers: { 'X-API-Key': apiKey } })
+          });
+          clearTimeout(timeoutId);
           if (modalNossoNumero !== nossoNumeroAtRequest) return;
           const text = await res.text();
           if (!res.ok) {
@@ -726,11 +732,13 @@
           showModalInfo('', false);
           applyDetalheData(data);
         } catch (e) {
+          clearTimeout(timeoutId);
           if (modalNossoNumero !== nossoNumeroAtRequest) return;
           btn.disabled = false;
           btn.textContent = 'Carregar dados para pagamento';
-          let msg = e.message || 'Tente novamente.';
-          try { const j = JSON.parse(msg); msg = j.info || j.message || msg; } catch (_) {}
+          const msg = e.name === 'AbortError'
+            ? 'API Hinova fora do ar. Tente novamente em alguns minutos.'
+            : (e.message || 'Tente novamente.');
           showModalInfo(msg);
         }
       }
@@ -744,8 +752,14 @@
         const url = shortCode
           ? apiBase + '/api/boletos-por-short/' + encodeURIComponent(shortCode) + '/detalhe/' + encodeURIComponent(modalNossoNumero)
           : apiBase + '/api/boletos/detalhe/' + encodeURIComponent(modalNossoNumero) + '?cliente_id=' + encodeURIComponent(modalClienteId) + (modalConsultorId ? '&consultor_id=' + encodeURIComponent(modalConsultorId) : '');
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 35000);
         try {
-          const res = await fetch(url, shortCode ? {} : { headers: { 'X-API-Key': apiKey } });
+          const res = await fetch(url, {
+            signal: controller.signal,
+            ...(shortCode ? {} : { headers: { 'X-API-Key': apiKey } })
+          });
+          clearTimeout(timeoutId);
           const text = await res.text();
           if (!res.ok) {
             let info = text;
@@ -756,8 +770,10 @@
           const data = JSON.parse(text);
           applyDetalheData(data);
         } catch (e) {
-          let msg = e.message || 'Tente novamente.';
-          try { const j = JSON.parse(msg); msg = j.info || j.message || msg; } catch (_) {}
+          clearTimeout(timeoutId);
+          const msg = e.name === 'AbortError'
+            ? 'API Hinova fora do ar. Tente novamente em alguns minutos.'
+            : (e.message || 'Tente novamente.');
           showModalInfo(msg);
         } finally {
           if (btn) { btn.disabled = false; if (labelEl) labelEl.textContent = originalText; }
