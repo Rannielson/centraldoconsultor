@@ -90,6 +90,26 @@
       color: var(--muted-foreground);
       pointer-events: none;
     }
+    .mes-vencimento-wrap { margin-bottom: 1rem; }
+    .mes-vencimento-label { display: block; font-size: 0.8125rem; font-weight: 500; color: var(--muted-foreground); margin-bottom: 0.375rem; }
+    .mes-vencimento-select {
+      width: 100%;
+      max-width: 240px;
+      height: 2.5rem;
+      padding: 0 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      font-size: 0.9375rem;
+      font-family: inherit;
+      color: var(--foreground);
+      background: var(--card);
+      cursor: pointer;
+    }
+    .mes-vencimento-select:focus {
+      outline: none;
+      border-color: var(--ring);
+      box-shadow: 0 0 0 3px oklch(69.18% 0.18855 38.353 / 0.2);
+    }
     .container { max-width: 720px; margin: 0 auto; padding: 0 1rem; }
     .card {
       background: var(--card);
@@ -215,6 +235,13 @@
   </header>
 
   <main class="container" id="main">
+    <div class="mes-vencimento-wrap" id="mesVencimentoWrap" style="display:none;">
+      <label for="mesVencimento" class="mes-vencimento-label">Mês de vencimento</label>
+      <select id="mesVencimento" class="mes-vencimento-select" aria-label="Selecionar mês de vencimento">
+        <option value="02/2026">Fevereiro 2026</option>
+        <option value="03/2026" selected>Março 2026</option>
+      </select>
+    </div>
     <div class="loading" id="loading">Carregando...</div>
     <div class="error" id="error" style="display:none;"></div>
     <div id="list" style="display:none;"></div>
@@ -317,9 +344,22 @@
         return true;
       }
 
-      async function loadBoletos() {
+      function periodoPorCompetencia(competencia) {
+        const map = {
+          '02/2026': { data_inicial: '01/02/2026', data_final: '28/02/2026' },
+          '03/2026': { data_inicial: '01/03/2026', data_final: '31/03/2026' }
+        };
+        return map[competencia] || map['03/2026'];
+      }
+
+      async function loadBoletos(periodo) {
         if (shortCode) {
-          const res = await fetch(apiBase + '/api/boletos-por-short/' + encodeURIComponent(shortCode));
+          show(document.getElementById('loading'), true);
+          show(document.getElementById('error'), false);
+          show(document.getElementById('list'), false);
+          show(document.getElementById('empty'), false);
+          const qs = periodo ? '?data_inicial=' + encodeURIComponent(periodo.data_inicial) + '&data_final=' + encodeURIComponent(periodo.data_final) : '';
+          const res = await fetch(apiBase + '/api/boletos-por-short/' + encodeURIComponent(shortCode) + qs);
           if (!res.ok) {
             setError(res.status === 404 ? 'Link inválido ou expirado.' : 'Erro ao carregar boletos: ' + (await res.text()));
             return;
@@ -330,6 +370,7 @@
           if (data.nome_consultor) nomeConsultor = data.nome_consultor;
           if (data.cliente && data.cliente.logo_url) { logoUrl = data.cliente.logo_url; applyLogo(); }
           show(document.getElementById('loading'), false);
+          show(document.getElementById('mesVencimentoWrap'), true);
           if (!data.boletos || data.boletos.length === 0) {
             show(document.getElementById('empty'), true);
             show(document.getElementById('searchWrap'), false);
@@ -700,7 +741,16 @@
         applyLogo();
         updateHeaderTitle();
         if (token) await resolveToken();
-        await loadBoletos();
+        if (shortCode) {
+          const sel = document.getElementById('mesVencimento');
+          const periodo = periodoPorCompetencia(sel ? sel.value : '03/2026');
+          sel && sel.addEventListener('change', function() {
+            loadBoletos(periodoPorCompetencia(this.value));
+          });
+          await loadBoletos(periodo);
+        } else {
+          await loadBoletos();
+        }
       })();
     })();
   </script>

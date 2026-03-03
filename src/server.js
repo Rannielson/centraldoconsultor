@@ -138,10 +138,16 @@ fastify.get('/api/boletos-por-short/:code/detalhe/:nossoNumero', async (request,
   }
 });
 
-// GET /api/boletos-por-short/:code — lista boletos do consultor (sem API Key)
+// Período exibido nos links /app/s/:code — apenas boletos de 20/fev a 31/mar
+const BOLETOS_SHORT_DATA_INICIAL = process.env.BOLETOS_SHORT_DATA_INICIAL || '20/02/2026';
+const BOLETOS_SHORT_DATA_FINAL = process.env.BOLETOS_SHORT_DATA_FINAL || '31/03/2026';
+
+// GET /api/boletos-por-short/:code — lista boletos do consultor (sem API Key). Query: data_inicial, data_final (DD/MM/YYYY).
 fastify.get('/api/boletos-por-short/:code', async (request, reply) => {
   try {
     const { code } = request.params;
+    const dataInicial = (request.query && request.query.data_inicial) || BOLETOS_SHORT_DATA_INICIAL;
+    const dataFinal = (request.query && request.query.data_final) || BOLETOS_SHORT_DATA_FINAL;
     const { resolverPorShortCode } = await import('./services/consultorLinksService.js');
     const { listarBoletos } = await import('./services/boletoService.js');
     const data = await resolverPorShortCode(code);
@@ -149,6 +155,8 @@ fastify.get('/api/boletos-por-short/:code', async (request, reply) => {
     const resultado = await listarBoletos({
       cliente_id: data.cliente_id,
       consultor_id: data.consultor_id,
+      data_vencimento_inicial: dataInicial,
+      data_vencimento_final: dataFinal,
       limit: 500,
       page: 1
     });

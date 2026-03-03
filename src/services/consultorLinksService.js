@@ -37,6 +37,21 @@ function gerarShortCode() {
 }
 
 /**
+ * Retorna primeiro e último dia do mês para competência MM/YYYY (formato ISO YYYY-MM-DD)
+ * @param {string} competencia - ex: 03/2026
+ * @returns {{ dataInicio: string, dataFim: string } | null}
+ */
+function periodoCompetencia(competencia) {
+  if (!competencia || !/^\d{1,2}\/\d{4}$/.test(competencia)) return null;
+  const [mes, ano] = competencia.split('/').map(Number);
+  if (mes < 1 || mes > 12) return null;
+  const dataInicio = `${ano}-${String(mes).padStart(2, '0')}-01`;
+  const ultimoDia = new Date(ano, mes, 0).getDate();
+  const dataFim = `${ano}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+  return { dataInicio, dataFim };
+}
+
+/**
  * Gera ou atualiza links públicos por consultor para uma competência
  * @param {string} clienteId - UUID do cliente
  * @param {string} competencia - MM/YYYY
@@ -44,12 +59,19 @@ function gerarShortCode() {
  */
 export async function gerarLinksParaCompetencia(clienteId, competencia) {
   const baseUrl = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
+  const periodo = periodoCompetencia(competencia);
+  // Inclui consultores com boletos na competência: por mes_referente OU por data_vencimento no mês
   const consultoresResult = await query(
-    `SELECT DISTINCT b.consultor_id, c.nome as nome_consultor
-     FROM boletos b
-     INNER JOIN consultores c ON c.id = b.consultor_id
-     WHERE b.cliente_id = $1 AND b.mes_referente = $2`,
-    [clienteId, competencia]
+    periodo
+      ? `SELECT DISTINCT b.consultor_id, c.nome as nome_consultor
+         FROM boletos b
+         INNER JOIN consultores c ON c.id = b.consultor_id
+         WHERE b.cliente_id = $1 AND (b.mes_referente = $2 OR (b.data_vencimento >= $3::date AND b.data_vencimento <= $4::date))`
+      : `SELECT DISTINCT b.consultor_id, c.nome as nome_consultor
+         FROM boletos b
+         INNER JOIN consultores c ON c.id = b.consultor_id
+         WHERE b.cliente_id = $1 AND b.mes_referente = $2`,
+    periodo ? [clienteId, competencia, periodo.dataInicio, periodo.dataFim] : [clienteId, competencia]
   );
   const links = [];
   for (const row of consultoresResult.rows) {

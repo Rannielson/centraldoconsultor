@@ -36,7 +36,7 @@ export async function buscarBoletosPeriodo(tokenBearer, urlBase, params) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${tokenBearer}`
       },
-      timeout: 180000 // 180 segundos (3 minutos) de timeout
+      timeout: 600000 // 600 segundos (10 minutos) de timeout
     });
     
     // A API SGA pode retornar um array [{}] ou um objeto {} diretamente

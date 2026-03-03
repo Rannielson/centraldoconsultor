@@ -21,7 +21,7 @@ const pool = new Pool({
   },
   max: 20, // Máximo de conexões no pool
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 10000, // 10s para primeira conexão (evita falha em redes lentas)
 });
 
 // Evento de erro no pool
