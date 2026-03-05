@@ -5,7 +5,11 @@ import { fileURLToPath } from 'url';
 import cors from '@fastify/cors';
 import dotenv from 'dotenv';
 import axios from 'axios';
+import cron from 'node-cron';
 import { testConnection } from './config/database.js';
+import { executarSincronizacaoDiaria } from './jobs/sincronizacaoDiariaJob.js';
+import { executarRelatorioConsolidado } from './jobs/relatorioConsolidadoJob.js';
+import { executarRelatorioProducao } from './jobs/relatorioProducaoJob.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, '..', 'public');
@@ -317,6 +321,18 @@ async function start() {
     
     // Iniciar servidor
     await fastify.listen({ port, host });
+
+    // Registrar cron: sincronização diária às 9h10 (timezone São Paulo)
+    cron.schedule('10 9 * * *', executarSincronizacaoDiaria, {
+      timezone: process.env.CRON_TIMEZONE || 'America/Sao_Paulo'
+    });
+    cron.schedule('30 18 * * *', executarRelatorioProducao, {
+      timezone: process.env.CRON_TIMEZONE || 'America/Sao_Paulo'
+    });
+    cron.schedule('0 19 * * *', executarRelatorioConsolidado, {
+      timezone: process.env.CRON_TIMEZONE || 'America/Sao_Paulo'
+    });
+    console.log('⏰ Cron registrado: sincronização 9h10, produção 18h30, consolidado 19h (America/Sao_Paulo)');
     
     console.log('\n✅ Servidor iniciado com sucesso!\n');
     console.log(`📍 URL: http://localhost:${port}`);

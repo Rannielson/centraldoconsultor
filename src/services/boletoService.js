@@ -1,5 +1,5 @@
 import { query } from '../config/database.js';
-import { buscarTodosBoletosPeriodo } from './sgaService.js';
+import { buscarTodosBoletosPeriodo, obterPeriodoMesAteHoje } from './sgaService.js';
 import { competenciaDeData, gerarLinksParaCompetencia } from './consultorLinksService.js';
 
 /**
@@ -12,9 +12,11 @@ import { competenciaDeData, gerarLinksParaCompetencia } from './consultorLinksSe
  * @param {string} dataInicial - Data inicial (DD/MM/YYYY)
  * @param {string} dataFinal - Data final (DD/MM/YYYY)
  * @param {string} codigoSituacao - Código da situação do boleto
+ * @param {object} [opcoes] - Opções adicionais
+ * @param {string[]} [opcoes.situacoesVeiculoOverride] - Sobrescreve situações aceitas (ex: ['ATIVO','INADIMPLENTE']) em vez de usar configuracoes_filtro
  * @returns {Promise<object>} Estatísticas da sincronização
  */
-export async function sincronizarBoletos(clienteId, dataInicial, dataFinal, codigoSituacao = "2") {
+export async function sincronizarBoletos(clienteId, dataInicial, dataFinal, codigoSituacao = "2", opcoes = {}) {
   console.log(`\n🔄 Iniciando sincronização de boletos para cliente ${clienteId}`);
   console.log(`📅 Período: ${dataInicial} a ${dataFinal}`);
   
@@ -68,20 +70,23 @@ export async function sincronizarBoletos(clienteId, dataInicial, dataFinal, codi
     
     console.log(`✅ ${consultoresResult.rows.length} consultores ativos encontrados`);
     
-    // 3. Buscar configurações de filtro
-    console.log('3️⃣ Buscando configurações de filtro...');
-    const configResult = await query(
-      'SELECT situacoes_veiculo_aceitas FROM configuracoes_filtro WHERE cliente_id = $1',
-      [clienteId]
-    );
-    
-    let situacoesAceitas = ['ATIVO']; // Padrão
-    
-    if (configResult.rows.length > 0) {
-      situacoesAceitas = configResult.rows[0].situacoes_veiculo_aceitas;
+    // 3. Buscar configurações de filtro (ou usar override)
+    let situacoesAceitas;
+    if (opcoes.situacoesVeiculoOverride && Array.isArray(opcoes.situacoesVeiculoOverride)) {
+      situacoesAceitas = opcoes.situacoesVeiculoOverride;
+      console.log('3️⃣ Usando situações de veículo (override):', situacoesAceitas);
+    } else {
+      console.log('3️⃣ Buscando configurações de filtro...');
+      const configResult = await query(
+        'SELECT situacoes_veiculo_aceitas FROM configuracoes_filtro WHERE cliente_id = $1',
+        [clienteId]
+      );
+      situacoesAceitas = ['ATIVO']; // Padrão
+      if (configResult.rows.length > 0) {
+        situacoesAceitas = configResult.rows[0].situacoes_veiculo_aceitas;
+      }
+      console.log(`✅ Situações de veículo aceitas:`, situacoesAceitas);
     }
-    
-    console.log(`✅ Situações de veículo aceitas:`, situacoesAceitas);
     
     // 4. Buscar boletos da API SGA
     console.log('4️⃣ Buscando boletos da API SGA...');
@@ -205,6 +210,19 @@ export async function sincronizarBoletos(clienteId, dataInicial, dataFinal, codi
     console.error('❌ Erro na sincronização:', error.message);
     throw error;
   }
+}
+
+/**
+ * Sincroniza boletos do mês vigente até hoje, com filtro fixo ATIVO + INADIMPLENTE.
+ * Usado pelo job diário às 9h10.
+ * @param {string} clienteId - ID do cliente
+ * @returns {Promise<object>} Estatísticas da sincronização
+ */
+export async function sincronizarBoletosMesAteHoje(clienteId) {
+  const { data_inicial, data_final } = obterPeriodoMesAteHoje();
+  return sincronizarBoletos(clienteId, data_inicial, data_final, '2', {
+    situacoesVeiculoOverride: ['ATIVO', 'INADIMPLENTE']
+  });
 }
 
 /**
@@ -491,6 +509,7 @@ export async function buscarBoletoPorId(boletoId) {
 
 export default {
   sincronizarBoletos,
+  sincronizarBoletosMesAteHoje,
   listarBoletos,
   buscarBoletoPorId
 };

@@ -25,7 +25,7 @@ export async function buscarBoletosPeriodo(tokenBearer, urlBase, params) {
       data_vencimento_inicial: params.data_vencimento_inicial,
       data_vencimento_final: params.data_vencimento_final,
       inicio_paginacao: params.inicio_paginacao || 0,
-      quantidade_por_pagina: params.quantidade_por_pagina || 3000
+      quantidade_por_pagina: params.quantidade_por_pagina || 500
     };
     
     console.log(`📡 Requisição para API SGA: ${endpoint}`);
@@ -119,35 +119,37 @@ export async function buscarBoletosPeriodo(tokenBearer, urlBase, params) {
  * @param {object} params - Parâmetros da requisição
  * @returns {Promise<Array>} Array com todos os boletos
  */
+const QUANTIDADE_POR_PAGINA = 500;
+
 export async function buscarTodosBoletosPeriodo(tokenBearer, urlBase, params) {
   const todosBoletos = [];
   let paginaAtual = 0;
-  let totalPaginas = 1;
-  
-  console.log('🔄 Iniciando busca paginada de boletos...');
-  
+  const quantidadePorPagina = params.quantidade_por_pagina || QUANTIDADE_POR_PAGINA;
+
+  console.log(`🔄 Iniciando busca paginada (${quantidadePorPagina} por página)...`);
+
   try {
-    while (paginaAtual < totalPaginas) {
+    while (true) {
       const resultado = await buscarBoletosPeriodo(tokenBearer, urlBase, {
         ...params,
-        inicio_paginacao: paginaAtual
+        inicio_paginacao: paginaAtual,
+        quantidade_por_pagina: quantidadePorPagina
       });
-      
-      if (resultado.boletos && resultado.boletos.length > 0) {
-        todosBoletos.push(...resultado.boletos);
+
+      const boletos = resultado.boletos || [];
+      if (boletos.length > 0) {
+        todosBoletos.push(...boletos);
       }
-      
-      totalPaginas = resultado.numero_paginas || 1;
+
+      console.log(`📊 Página ${paginaAtual + 1}: ${boletos.length} boletos | Total acumulado: ${todosBoletos.length}`);
+
+      // Para quando não há mais boletos ou veio menos que a página cheia (não há próxima)
+      if (boletos.length === 0) break;
+      if (boletos.length < quantidadePorPagina) break;
+
       paginaAtual++;
-      
-      console.log(`📊 Progresso: ${paginaAtual}/${totalPaginas} páginas processadas, ${todosBoletos.length} boletos coletados`);
-      
-      // Se não há mais boletos, para o loop
-      if (resultado.boletos.length === 0) {
-        break;
-      }
     }
-    
+
     console.log(`✅ Busca paginada concluída: ${todosBoletos.length} boletos no total`);
     return todosBoletos;
     
@@ -238,10 +240,188 @@ export function obterPeriodoMesAtual() {
   };
 }
 
+/**
+ * Converte data DD/MM/YYYY para YYYY-MM-DD
+ * @param {string} dataBr - Data no formato DD/MM/YYYY
+ * @returns {string} Data no formato YYYY-MM-DD
+ */
+function converterDataParaIso(dataBr) {
+  if (!dataBr || typeof dataBr !== 'string') return '';
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(dataBr.trim());
+  if (!match) return '';
+  return `${match[3]}-${match[2]}-${match[1]}`;
+}
+
+/**
+ * Busca veículos da API SGA por período (produção - listar/veiculo)
+ * @param {string} tokenBearer - Token de autenticação Bearer
+ * @param {string} urlBase - URL base da API SGA
+ * @param {object} params - Parâmetros da requisição
+ * @param {number} params.inicio_paginacao - Índice da página (0, 1, 2...)
+ * @param {number} params.quantidade_por_pagina - Quantidade por página (default 999)
+ * @param {string} params.data_contrato - Data inicial contrato (YYYY-MM-DD)
+ * @param {string} params.data_contrato_final - Data final contrato (YYYY-MM-DD)
+ * @returns {Promise<object>} Dados dos veículos
+ */
+export async function buscarVeiculosPeriodo(tokenBearer, urlBase, params) {
+  try {
+    const endpoint = `${urlBase}/listar/veiculo`;
+
+    const requestBody = {
+      codigo_situacao: 1,
+      inicio_paginacao: params.inicio_paginacao ?? 0,
+      quantidade_por_pagina: params.quantidade_por_pagina ?? 999,
+      data_contrato: params.data_contrato,
+      data_contrato_final: params.data_contrato_final
+    };
+
+    console.log(`📡 Requisição para API SGA: ${endpoint}`);
+    console.log(`📄 Parâmetros:`, requestBody);
+
+    const response = await axios.post(endpoint, requestBody, {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${tokenBearer}`
+      },
+      timeout: 600000
+    });
+
+    let data = response.data;
+
+    if (Array.isArray(data)) {
+      if (data.length === 0) {
+        return { veiculos: [], total_veiculos: 0, numero_paginas: 0, pagina_corrente: 0 };
+      }
+      data = data[0];
+    }
+
+    if (!data || typeof data !== 'object' || !data.veiculos) {
+      return { veiculos: [], total_veiculos: 0, numero_paginas: 0, pagina_corrente: 0 };
+    }
+
+    const total = parseInt(data.total_veiculos) || 0;
+    const numPaginas = parseInt(data.numero_paginas) || 0;
+    const pagCorrente = parseInt(data.pagina_corrente) || 0;
+
+    console.log(
+      `✅ API SGA (veículos): ${total} total, página ${pagCorrente}/${numPaginas || 1}`
+    );
+
+    return {
+      veiculos: data.veiculos || [],
+      total_veiculos: total,
+      numero_paginas: numPaginas,
+      pagina_corrente: pagCorrente
+    };
+  } catch (error) {
+    console.error('❌ Erro ao buscar veículos da API SGA:', error.message);
+
+    if (error.response) {
+      const status = error.response.status;
+      const data = error.response.data;
+
+      if (status === 401) throw new Error('Token de autenticação inválido ou expirado');
+      if (status === 403) throw new Error('Acesso negado pela API SGA');
+      if (status === 404) throw new Error('Endpoint da API SGA não encontrado');
+      if (status >= 500) throw new Error('Erro interno na API SGA');
+      throw new Error(`Erro na API SGA: ${data?.message || error.message}`);
+    }
+    if (error.request) {
+      throw new Error('Não foi possível conectar à API SGA. Verifique a URL e conexão de rede.');
+    }
+    throw new Error(`Erro ao configurar requisição: ${error.message}`);
+  }
+}
+
+/**
+ * Busca todos os veículos de produção em um período (paginação automática)
+ * @param {string} tokenBearer - Token de autenticação Bearer
+ * @param {string} urlBase - URL base da API SGA
+ * @param {object} params - Parâmetros
+ * @param {string} params.dataInicial - Data inicial (DD/MM/YYYY) - primeiro dia do mês
+ * @param {string} params.dataFinal - Data final (DD/MM/YYYY) - dia atual
+ * @returns {Promise<Array>} Array com todos os veículos
+ */
+export async function buscarVeiculosProducao(tokenBearer, urlBase, params) {
+  const dataInicial = params.dataInicial;
+  const dataFinal = params.dataFinal;
+
+  if (!dataInicial || !dataFinal) {
+    throw new Error('dataInicial e dataFinal são obrigatórios para buscarVeiculosProducao');
+  }
+
+  const dataContrato = converterDataParaIso(dataInicial);
+  const dataContratoFinal = converterDataParaIso(dataFinal);
+
+  const todosVeiculos = [];
+  let paginaAtual = 0;
+  const quantidadePorPagina = 999;
+
+  console.log(`🔄 Iniciando busca paginada de veículos (${dataContrato} a ${dataContratoFinal})...`);
+
+  try {
+    while (true) {
+      const resultado = await buscarVeiculosPeriodo(tokenBearer, urlBase, {
+        inicio_paginacao: paginaAtual,
+        quantidade_por_pagina: quantidadePorPagina,
+        data_contrato: dataContrato,
+        data_contrato_final: dataContratoFinal
+      });
+
+      const veiculos = resultado.veiculos || [];
+      if (veiculos.length > 0) {
+        todosVeiculos.push(...veiculos);
+      }
+
+      console.log(
+        `📊 Página ${paginaAtual + 1}: ${veiculos.length} veículos | Total acumulado: ${todosVeiculos.length}`
+      );
+
+      if (veiculos.length === 0) break;
+      if (veiculos.length < quantidadePorPagina) break;
+
+      paginaAtual++;
+    }
+
+    console.log(`✅ Busca de veículos concluída: ${todosVeiculos.length} no total`);
+    return todosVeiculos;
+  } catch (error) {
+    console.error('❌ Erro na busca de veículos:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Obtém o primeiro dia do mês vigente até a data de hoje
+ * @returns {object} Objeto com data_inicial (01/MM/YYYY) e data_final (hoje DD/MM/YYYY)
+ */
+export function obterPeriodoMesAteHoje() {
+  const hoje = new Date();
+  const ano = hoje.getFullYear();
+  const mes = hoje.getMonth() + 1;
+
+  const primeiroDia = new Date(ano, mes - 1, 1);
+
+  const formatarData = (data) => {
+    const dia = String(data.getDate()).padStart(2, '0');
+    const mesNum = String(data.getMonth() + 1).padStart(2, '0');
+    const anoNum = data.getFullYear();
+    return `${dia}/${mesNum}/${anoNum}`;
+  };
+
+  return {
+    data_inicial: formatarData(primeiroDia),
+    data_final: formatarData(hoje)
+  };
+}
+
 export default {
   buscarBoletosPeriodo,
   buscarTodosBoletosPeriodo,
   buscarBoletoPorNossoNumero,
+  buscarVeiculosPeriodo,
+  buscarVeiculosProducao,
   validarFormatoData,
-  obterPeriodoMesAtual
+  obterPeriodoMesAtual,
+  obterPeriodoMesAteHoje
 };
