@@ -1,5 +1,5 @@
 import { query } from '../config/database.js';
-import { obterPeriodoMesAteHoje, buscarTodosBoletosPeriodo } from '../services/sgaService.js';
+import { obterPeriodos90Dias, buscarTodosBoletosPeriodo } from '../services/sgaService.js';
 import { montarPayloadRelatorio, gerarPdfRelatorio } from '../services/relatorioPdfService.js';
 import { normalizarChatId, enviarUrlWhatsApp } from '../services/cleoiaService.js';
 
@@ -9,7 +9,7 @@ const DELAY_ENTRE_ENVIOS_MS = 59000;
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Executa o job diário: busca boletos na Hinova (sem gravar no banco),
+ * Executa o job diário: busca boletos na Hinova dos últimos 90 dias (sem gravar no banco),
  * gera PDF individual por consultor e envia por WhatsApp com delay de 59s entre envios.
  * Roda às 9h10 via node-cron.
  */
@@ -17,7 +17,7 @@ export async function executarSincronizacaoDiaria() {
   const inicio = new Date();
   console.log(`\n🕐 [Cron] Iniciando sincronização diária em ${inicio.toISOString()}`);
 
-  const { data_inicial, data_final } = obterPeriodoMesAteHoje();
+  const periodos90 = obterPeriodos90Dias();
 
   try {
     const clientesResult = await query(
@@ -31,13 +31,19 @@ export async function executarSincronizacaoDiaria() {
     }
 
     console.log(`📋 [Cron] ${clientes.length} cliente(s) ativo(s)`);
-    console.log(`📅 Período: ${data_inicial} a ${data_final}\n`);
+    console.log(`📅 Período: últimos 90 dias (3 faixas: 0-30, 31-60, 61-90 dias)\n`);
 
     let primeiroEnvio = true;
 
     for (const cliente of clientes) {
       try {
         console.log(`--- Cliente: ${cliente.nome} ---`);
+
+        const urlBase = (cliente.url_base_api || '').replace(/^["']|["']$/g, '').trim();
+        if (!urlBase || !urlBase.startsWith('http')) {
+          console.log('   ⚠️ url_base_api inválida - pulando');
+          continue;
+        }
 
         const consultoresResult = await query(
           'SELECT id_consultor_sga, nome, contato FROM consultores WHERE cliente_id = $1 AND ativo = true',
@@ -54,15 +60,15 @@ export async function executarSincronizacaoDiaria() {
           continue;
         }
 
-        const boletosApi = await buscarTodosBoletosPeriodo(
-          cliente.token_bearer,
-          cliente.url_base_api,
-          {
+        const buscas = periodos90.map((p) =>
+          buscarTodosBoletosPeriodo(cliente.token_bearer, urlBase, {
             codigo_situacao_boleto: '2',
-            data_vencimento_inicial: data_inicial,
-            data_vencimento_final: data_final
-          }
+            data_vencimento_inicial: p.data_inicial,
+            data_vencimento_final: p.data_final
+          })
         );
+        const resultados = await Promise.all(buscas);
+        const boletosApi = resultados.flat();
 
         const porConsultor = new Map();
 
@@ -92,6 +98,11 @@ export async function executarSincronizacaoDiaria() {
         );
 
         for (const [idSga, boletos] of consultoresComBoletos) {
+          boletos.sort((a, b) => {
+            const na = (a.nome_associado || '').toString().toLowerCase();
+            const nb = (b.nome_associado || '').toString().toLowerCase();
+            return na.localeCompare(nb);
+          });
           try {
             const consultor = consultoresMap.get(idSga);
             const chatid = normalizarChatId(consultor.contato);
@@ -108,13 +119,14 @@ export async function executarSincronizacaoDiaria() {
             primeiroEnvio = false;
 
             const payload = montarPayloadRelatorio(boletos, consultor.nome, {
+              title: `Relatório de Inadimplência dos Últimos 90 Dias - ${consultor.nome}`,
               subtitle: new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
             });
 
             const pdfUrl = await gerarPdfRelatorio(payload);
             console.log(`   📄 PDF gerado para ${consultor.nome} (${boletos.length} boletos)`);
 
-            await enviarUrlWhatsApp(chatid, `RELATÓRIO DE BOLETOS EM ABERTOS (INADIMPLÊNCIA) - ${consultor.nome}`, pdfUrl);
+            await enviarUrlWhatsApp(chatid, `RELATÓRIO DE INADIMPLÊNCIA DOS ÚLTIMOS 90 DIAS - ${consultor.nome}`, pdfUrl);
             console.log(`   ✅ WhatsApp enviado para ${consultor.nome}`);
           } catch (err) {
             console.error(`   ❌ Erro ao processar ${consultor?.nome || idSga}:`, err.message);
