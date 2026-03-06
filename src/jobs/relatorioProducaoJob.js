@@ -1,5 +1,9 @@
 import { query } from '../config/database.js';
-import { obterPeriodoMesAteHoje, buscarVeiculosProducao } from '../services/sgaService.js';
+import {
+  obterPeriodoMesAteHoje,
+  obterPeriodos90Dias,
+  buscarVeiculosProducao
+} from '../services/sgaService.js';
 import {
   montarPayloadRelatorioProducao,
   montarPayloadRelatorioProducaoRanking,
@@ -44,6 +48,7 @@ export async function executarRelatorioProducao() {
     const consultoresMap = new Map();
     const consultoresComContato = new Map();
     const todosVeiculos = [];
+    const todosVeiculos90Dias = [];
 
     for (const cliente of clientes) {
       try {
@@ -63,22 +68,45 @@ export async function executarRelatorioProducao() {
           }
         });
 
+        const urlBase = (cliente.url_base_api || '').replace(/^["']|["']$/g, '').trim();
+        if (!urlBase || !urlBase.startsWith('http')) {
+          console.error(`   ⚠️ ${cliente.nome}: url_base_api inválida ou ausente — pulando`);
+          continue;
+        }
+
+        // Ranking: mês até hoje (uma busca)
         const veiculos = await buscarVeiculosProducao(
           cliente.token_bearer,
-          cliente.url_base_api,
+          urlBase,
           { dataInicial: data_inicial, dataFinal: data_final }
         );
-
         if (veiculos.length > 0) {
           todosVeiculos.push(...veiculos);
-          console.log(`   ${cliente.nome}: ${veiculos.length} adesões`);
+          console.log(`   ${cliente.nome}: ${veiculos.length} adesões (ranking)`);
+        }
+
+        // Individual: 3 faixas (0-30, 31-60, 61-90 dias)
+        const periodos90 = obterPeriodos90Dias();
+        const buscas = periodos90.map((p) =>
+          buscarVeiculosProducao(cliente.token_bearer, urlBase, {
+            dataInicial: p.data_inicial,
+            dataFinal: p.data_final
+          }).then((v) => v.map((veic) => ({ ...veic, faixa: p.faixa })))
+        );
+        const resultados = await Promise.all(buscas);
+        const veiculos90 = resultados.flat();
+        if (veiculos90.length > 0) {
+          todosVeiculos90Dias.push(...veiculos90);
+          console.log(`   ${cliente.nome}: ${veiculos90.length} adesões (90 dias, individual)`);
         }
       } catch (err) {
         console.error(`❌ Erro no cliente ${cliente.nome}:`, err.message);
       }
     }
 
-    if (todosVeiculos.length === 0) {
+    const temRanking = todosVeiculos.length > 0;
+    const temIndividual = todosVeiculos90Dias.length > 0;
+    if (!temRanking && !temIndividual) {
       console.log('⚠️ [Cron 18h30] Nenhuma adesão no período — envio omitido');
       const duracao = ((Date.now() - inicio.getTime()) / 1000).toFixed(1);
       console.log(`\n✅ [Cron 18h30] Concluído em ${duracao}s (sem produção)\n`);
@@ -88,32 +116,34 @@ export async function executarRelatorioProducao() {
     const subtitle = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 
     // Relatório ranking (Data, Consultor, Total no dia, Total no mês)
-    const payloadRanking = montarPayloadRelatorioProducaoRanking(
-      todosVeiculos,
-      consultoresMap,
-      data_final,
-      {
-        title: 'Relatório de Produção - Ranking - PROSEG',
-        subtitle
-      }
-    );
-    const pdfRankingUrl = await gerarPdfRelatorio(payloadRanking);
-    console.log(`📄 PDF ranking gerado: ${payloadRanking.content.items.length} consultores`);
-
-    for (const destino of destinos) {
-      await enviarUrlWhatsApp(
-        destino,
-        'RELATÓRIO DE PRODUÇÃO - RANKING - PROSEG',
-        pdfRankingUrl
+    if (temRanking) {
+      const payloadRanking = montarPayloadRelatorioProducaoRanking(
+        todosVeiculos,
+        consultoresMap,
+        data_final,
+        {
+          title: 'Relatório de Produção - Ranking - PROSEG',
+          subtitle
+        }
       );
-      console.log(`✅ WhatsApp (ranking) enviado para ${destino}`);
+      const pdfRankingUrl = await gerarPdfRelatorio(payloadRanking);
+      console.log(`📄 PDF ranking gerado: ${payloadRanking.content.items.length} consultores`);
+
+      for (const destino of destinos) {
+        await enviarUrlWhatsApp(
+          destino,
+          'RELATÓRIO DE PRODUÇÃO - RANKING - PROSEG',
+          pdfRankingUrl
+        );
+        console.log(`✅ WhatsApp (ranking) enviado para ${destino}`);
+      }
     }
 
-    // Envio individual por consultor (se habilitado)
+    // Envio individual por consultor (se habilitado) — usa dados 90 dias
     const enviarIndividual =
       process.env.RELATORIO_PRODUCAO_INDIVIDUAL !== 'false' &&
       process.env.RELATORIO_PRODUCAO_INDIVIDUAL !== '0';
-    if (enviarIndividual && consultoresComContato.size > 0) {
+    if (enviarIndividual && temIndividual && consultoresComContato.size > 0) {
       console.log(`\n📤 Envio individual para ${consultoresComContato.size} consultores com contato...`);
       let primeiroEnvio = true;
       for (const [idSga, info] of consultoresComContato) {
@@ -122,7 +152,7 @@ export async function executarRelatorioProducao() {
           console.log(`   ⏭️ ${info.nome} sem contato válido - pulando`);
           continue;
         }
-        const veiculosConsultor = todosVeiculos.filter(
+        const veiculosConsultor = todosVeiculos90Dias.filter(
           (v) => String(v.codigo_voluntario) === idSga
         );
         if (veiculosConsultor.length === 0) {
@@ -148,7 +178,7 @@ export async function executarRelatorioProducao() {
           const pdfIndividualUrl = await gerarPdfRelatorio(payloadIndividual);
           await enviarUrlWhatsApp(
             chatid,
-            `Sua produção (${veiculosConsultor.length} adesões no período)`,
+            `Sua produção (${veiculosConsultor.length} adesões nos últimos 90 dias)`,
             pdfIndividualUrl
           );
           console.log(`   ✅ ${info.nome}: ${veiculosConsultor.length} adesões enviadas`);

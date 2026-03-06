@@ -25,8 +25,13 @@ export function normalizarChatId(contato) {
  * @param {string} url - URL a enviar (ex: link do PDF)
  * @returns {Promise<object>} Resposta da API
  */
+function sanitizarUrl(val) {
+  if (!val || typeof val !== 'string') return '';
+  return val.replace(/^["']|["']$/g, '').trim();
+}
+
 export async function enviarUrlWhatsApp(chatid, text, url) {
-  const sendUrl = process.env.CLEOIA_BOT_SEND_URL;
+  const sendUrl = sanitizarUrl(process.env.CLEOIA_BOT_SEND_URL);
 
   if (!sendUrl) {
     throw new Error('CLEOIA_BOT_SEND_URL não configurada no ambiente');

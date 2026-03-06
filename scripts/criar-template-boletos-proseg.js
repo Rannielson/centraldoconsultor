@@ -1,6 +1,8 @@
 /**
- * Cria o template "Relatório de Produção Mensal - Proseg" no OpenPDF.
- * Uso: node scripts/criar-template-producao.js
+ * Cria/atualiza o template "Relatório de boletos em abertos - Proseg" no OpenPDF.
+ * Inclui coluna Parcela (ex: 1/3, 2/3, 3/3) indicando qual parcela de quantas do associado.
+ *
+ * Uso: node scripts/criar-template-boletos-proseg.js
  *
  * Requer: OPENPDF_API_KEY no .env
  */
@@ -9,18 +11,20 @@ import axios from 'axios';
 
 const OPENPDF_BASE = process.env.OPENPDF_BASE_URL || 'http://openpdf.atomos.tech';
 const TEMPLATE = {
-  id: 'relatorio-producao-proseg',
-  name: 'Relatório de Produção Mensal - Proseg',
+  id: 'boletos-proseg',
+  name: 'Relatório de boletos em abertos - Proseg',
   paperSize: 'A4',
   orientation: 'landscape',
-  columnsCount: 6,
+  columnsCount: 8,
   columnsDefinition: {
-    '0': { label: 'Data Contrato', type: 'text' },
+    '0': { label: 'Status', type: 'text' },
     '1': { label: 'Associado', type: 'text' },
-    '2': { label: 'Placa', type: 'text' },
-    '3': { label: 'Modelo', type: 'text' },
-    '4': { label: 'Consultor', type: 'text' },
-    '5': { label: 'Período', type: 'text' }
+    '2': { label: 'Celular', type: 'text' },
+    '3': { label: 'Vencimento', type: 'text' },
+    '4': { label: 'Valor', type: 'text' },
+    '5': { label: 'Placa', type: 'text' },
+    '6': { label: 'Consultor', type: 'text' },
+    '7': { label: 'Parcela', type: 'text' }
   }
 };
 
@@ -51,8 +55,8 @@ async function main() {
     return;
   }
 
-  // Se 404 ou 400 (record not found), criar via POST
-  if (putRes.status === 404 || putRes.status === 400) {
+  // Se 404, criar via POST
+  if (putRes.status === 404) {
     console.log('Template não existe. Criando via POST...');
     const postRes = await axios.post(postUrl, TEMPLATE, {
       headers: {

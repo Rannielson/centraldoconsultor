@@ -415,6 +415,41 @@ export function obterPeriodoMesAteHoje() {
   };
 }
 
+/**
+ * Obtém 3 períodos de 30 dias para relatório individual (90 dias para trás)
+ * @returns {object[]} Array de { data_inicial, data_final, faixa } em DD/MM/YYYY
+ *   - faixa1: 0-30 dias (hoje-30 até hoje)
+ *   - faixa2: 31-60 dias (hoje-60 até hoje-31)
+ *   - faixa3: 61-90 dias (hoje-90 até hoje-61)
+ */
+export function obterPeriodos90Dias() {
+  const hoje = new Date();
+
+  const formatarData = (data) => {
+    const dia = String(data.getDate()).padStart(2, '0');
+    const mesNum = String(data.getMonth() + 1).padStart(2, '0');
+    const anoNum = data.getFullYear();
+    return `${dia}/${mesNum}/${anoNum}`;
+  };
+
+  const addDays = (date, days) => {
+    const d = new Date(date);
+    d.setDate(d.getDate() + days);
+    return d;
+  };
+
+  const d0 = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
+  const d30 = addDays(d0, -30);
+  const d60 = addDays(d0, -60);
+  const d90 = addDays(d0, -90);
+
+  return [
+    { data_inicial: formatarData(d30), data_final: formatarData(d0), faixa: '0-30 dias' },
+    { data_inicial: formatarData(d60), data_final: formatarData(addDays(d0, -31)), faixa: '31-60 dias' },
+    { data_inicial: formatarData(d90), data_final: formatarData(addDays(d0, -61)), faixa: '61-90 dias' }
+  ];
+}
+
 export default {
   buscarBoletosPeriodo,
   buscarTodosBoletosPeriodo,
@@ -423,5 +458,6 @@ export default {
   buscarVeiculosProducao,
   validarFormatoData,
   obterPeriodoMesAtual,
-  obterPeriodoMesAteHoje
+  obterPeriodoMesAteHoje,
+  obterPeriodos90Dias
 };

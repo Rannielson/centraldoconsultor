@@ -91,15 +91,32 @@ export function montarPayloadRelatorio(boletos, nomeConsultor, opcoes = {}) {
     opcoes.subtitle ||
     new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 
-  const items = boletos.map((boleto) => ({
-    '0': boleto.status_boleto || getStatus(boleto.data_vencimento),
-    '1': boleto.nome_associado || '',
-    '2': boleto.celular || '',
-    '3': formatDate(boleto.data_vencimento),
-    '4': formatCurrency(boleto.valor_boleto),
-    '5': boleto.placa_veiculo || boleto.placa || '',
-    '6': boleto.nome_consultor || nomeConsultor || ''
-  }));
+  // Contar parcelas por associado e atribuir N/Total a cada linha (ex: 1/3, 2/3, 3/3)
+  const totalPorAssociado = new Map();
+  for (const b of boletos) {
+    const n = b.nome_associado || '';
+    totalPorAssociado.set(n, (totalPorAssociado.get(n) || 0) + 1);
+  }
+  const atualPorAssociado = new Map();
+
+  const items = boletos.map((boleto) => {
+    const nome = boleto.nome_associado || '';
+    const total = totalPorAssociado.get(nome) || 1;
+    const atual = (atualPorAssociado.get(nome) || 0) + 1;
+    atualPorAssociado.set(nome, atual);
+    const parcela = `${atual}/${total}`;
+
+    return {
+      '0': boleto.status_boleto || getStatus(boleto.data_vencimento),
+      '1': boleto.nome_associado || '',
+      '2': boleto.celular || '',
+      '3': formatDate(boleto.data_vencimento),
+      '4': formatCurrency(boleto.valor_boleto),
+      '5': boleto.placa_veiculo || boleto.placa || '',
+      '6': boleto.nome_consultor || nomeConsultor || '',
+      '7': parcela
+    };
+  });
 
   return {
     templateId,
@@ -166,18 +183,23 @@ export function montarPayloadRelatorioConsolidado(linhas, opcoes = {}) {
  * @param {string} [opcoes.subtitle] - Subtítulo (mês/ano)
  * @returns {object} Payload para OpenPDF (template relatorio-producao-proseg)
  */
+const ORDEM_FAIXA = ['0-30 dias', '31-60 dias', '61-90 dias'];
+
 export function montarPayloadRelatorioProducao(veiculos, consultoresMap, opcoes = {}) {
   const title = opcoes.title || 'Relatório de Produção Mensal - PROSEG';
   const subtitle =
     opcoes.subtitle || new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 
   const sorted = [...veiculos].sort((a, b) => {
+    const nomeA = (a.nome_associado || '').toString().toLowerCase();
+    const nomeB = (b.nome_associado || '').toString().toLowerCase();
+    if (nomeA !== nomeB) return nomeA.localeCompare(nomeB);
+    const idxA = ORDEM_FAIXA.indexOf(a.faixa || '') >= 0 ? ORDEM_FAIXA.indexOf(a.faixa) : 0;
+    const idxB = ORDEM_FAIXA.indexOf(b.faixa || '') >= 0 ? ORDEM_FAIXA.indexOf(b.faixa) : 0;
+    if (idxA !== idxB) return idxA - idxB;
     const dtA = (a.data_contrato || '').toString();
     const dtB = (b.data_contrato || '').toString();
-    if (dtA !== dtB) return dtA.localeCompare(dtB);
-    const nomeA = a.nome_voluntario || consultoresMap.get(String(a.codigo_voluntario)) || '';
-    const nomeB = b.nome_voluntario || consultoresMap.get(String(b.codigo_voluntario)) || '';
-    return nomeA.localeCompare(nomeB);
+    return dtA.localeCompare(dtB);
   });
 
   const items = sorted.map((v) => {
@@ -188,7 +210,8 @@ export function montarPayloadRelatorioProducao(veiculos, consultoresMap, opcoes 
       '1': v.nome_associado || '',
       '2': v.placa || '',
       '3': v.modelo || '',
-      '4': nomeConsultor
+      '4': nomeConsultor,
+      '5': v.faixa || ''
     };
   });
 
@@ -359,9 +382,15 @@ export function montarPayloadRelatorioProducaoRanking(
  * @param {object} payload - Payload no formato esperado pelo OpenPDF
  * @returns {Promise<string>} pdfUrl
  */
+function sanitizarUrl(val) {
+  if (!val || typeof val !== 'string') return '';
+  return String(val).replace(/^["']|["']$/g, '').trim();
+}
+
 export async function gerarPdfRelatorio(payload) {
-  const url = process.env.OPENPDF_URL || 'http://openpdf.atomos.tech/v1/pdfs/render';
-  const apiKey = process.env.OPENPDF_API_KEY;
+  const url =
+    sanitizarUrl(process.env.OPENPDF_URL) || 'http://openpdf.atomos.tech/v1/pdfs/render';
+  const apiKey = sanitizarUrl(process.env.OPENPDF_API_KEY);
 
   if (!apiKey) {
     throw new Error('OPENPDF_API_KEY não configurada no ambiente');
