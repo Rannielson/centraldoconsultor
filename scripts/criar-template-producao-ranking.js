@@ -13,12 +13,13 @@ const TEMPLATE = {
   name: 'Relatório de Produção - Ranking - Proseg',
   paperSize: 'A4',
   orientation: 'landscape',
-  columnsCount: 4,
+  columnsCount: 5,
   columnsDefinition: {
     '0': { label: 'Data', type: 'text' },
     '1': { label: 'Consultor', type: 'text' },
     '2': { label: 'Total no dia', type: 'number' },
-    '3': { label: 'Total no mês', type: 'number' }
+    '3': { label: 'Total no mês', type: 'number' },
+    '4': { label: 'Total no ano', type: 'number' }
   }
 };
 

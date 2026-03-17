@@ -144,8 +144,6 @@ export function montarPayloadRelatorio(boletos, nomeConsultor, opcoes = {}) {
  */
 export function montarPayloadRelatorioConsolidado(linhas, opcoes = {}) {
   const title = opcoes.title || 'Relatório consolidado de boletos em abertos - Proseg';
-  const subtitle =
-    opcoes.subtitle || new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 
   const items = linhas.map((l) => {
     const total = l.total ?? 0;
@@ -160,6 +158,16 @@ export function montarPayloadRelatorioConsolidado(linhas, opcoes = {}) {
       '5': `${pctPagos.toFixed(1)}%`
     };
   });
+
+  // Consolidado geral (somas)
+  const somaTotal = linhas.reduce((s, l) => s + (l.total ?? 0), 0);
+  const somaAbertos = linhas.reduce((s, l) => s + (l.abertos ?? 0), 0);
+  const somaBaixados = linhas.reduce((s, l) => s + (l.baixados ?? 0), 0);
+  const pctAbertosGeral = somaTotal > 0 ? ((somaAbertos / somaTotal) * 100).toFixed(1) : '0.0';
+  const pctPagosGeral = somaTotal > 0 ? ((somaBaixados / somaTotal) * 100).toFixed(1) : '0.0';
+
+  const mesAno = opcoes.subtitle || new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  const subtitle = `${mesAno} | Consolidado Geral: ${somaTotal} boletos | ${somaAbertos} abertos (${pctAbertosGeral}%) | ${somaBaixados} baixados (${pctPagosGeral}%)`;
 
   return {
     templateId: 'relatorio-consolidado-proseg',
@@ -298,13 +306,14 @@ export function montarPayloadRelatorioProducaoSintetico(veiculos, consultoresMap
 }
 
 /**
- * Monta o payload do relatório de produção RANKING (Data, Consultor, Total no dia, Total no mês)
- * @param {object[]} veiculos - Array de veículos da API listar/veiculo
+ * Monta o payload do relatório de produção RANKING (Data, Consultor, Total no dia, Total no mês, Total no ano)
+ * @param {object[]} veiculos - Array de veículos do mês da API listar/veiculo
  * @param {Map<string, string>} consultoresMap - Map id_consultor_sga -> nome
  * @param {string} dataReferencia - Data de referência do relatório (DD/MM/YYYY) - dia que está puxando
  * @param {object} [opcoes] - Opções
  * @param {string} [opcoes.title] - Título (default: Relatório de Produção - Ranking - PROSEG)
  * @param {string} [opcoes.subtitle] - Subtítulo (mês/ano)
+ * @param {object[]} [opcoes.veiculosAno] - Array de veículos do ano (para calcular Total no ano)
  * @returns {object} Payload para OpenPDF (template relatorio-producao-ranking-proseg)
  */
 export function montarPayloadRelatorioProducaoRanking(
@@ -314,8 +323,6 @@ export function montarPayloadRelatorioProducaoRanking(
   opcoes = {}
 ) {
   const title = opcoes.title || 'Relatório de Produção - Ranking - PROSEG';
-  const subtitle =
-    opcoes.subtitle || new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 
   // dataReferencia em ISO para comparar (DD/MM/YYYY -> YYYY-MM-DD)
   const [diaRef, mesRef, anoRef] = (dataReferencia || '').split('/');
@@ -324,7 +331,7 @@ export function montarPayloadRelatorioProducaoRanking(
   // Inicializa todos os consultores com 0
   const porConsultor = new Map();
   for (const [idVol, nome] of consultoresMap.entries()) {
-    porConsultor.set(idVol, { totalDia: 0, totalMes: 0, nome });
+    porConsultor.set(idVol, { totalDia: 0, totalMes: 0, totalAno: 0, nome });
   }
 
   for (const v of veiculos) {
@@ -335,6 +342,7 @@ export function montarPayloadRelatorioProducaoRanking(
       porConsultor.set(idVol, {
         totalDia: 0,
         totalMes: 0,
+        totalAno: 0,
         nome: consultoresMap.get(idVol) || idVol || 'N/A'
       });
     }
@@ -345,23 +353,48 @@ export function montarPayloadRelatorioProducaoRanking(
     }
   }
 
+  // Contabilizar veículos do ano (se fornecidos)
+  const veiculosAno = opcoes.veiculosAno || [];
+  for (const v of veiculosAno) {
+    const idVol = String(v.codigo_voluntario || '');
+    if (!porConsultor.has(idVol)) {
+      porConsultor.set(idVol, {
+        totalDia: 0,
+        totalMes: 0,
+        totalAno: 0,
+        nome: consultoresMap.get(idVol) || idVol || 'N/A'
+      });
+    }
+    porConsultor.get(idVol).totalAno += 1;
+  }
+
   const linhas = [];
   for (const [idVol, acc] of porConsultor.entries()) {
     const nomeConsultor = consultoresMap.get(idVol) || acc.nome || idVol || 'N/A';
     linhas.push({
       consultor: nomeConsultor,
       totalDia: acc.totalDia,
-      totalMes: acc.totalMes
+      totalMes: acc.totalMes,
+      totalAno: acc.totalAno
     });
   }
 
   linhas.sort((a, b) => b.totalMes - a.totalMes);
 
+  // Calcular consolidado geral (somas)
+  const somaDia = linhas.reduce((s, l) => s + l.totalDia, 0);
+  const somaMes = linhas.reduce((s, l) => s + l.totalMes, 0);
+  const somaAno = linhas.reduce((s, l) => s + l.totalAno, 0);
+
+  const mesAno = opcoes.subtitle || new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  const subtitle = `${mesAno} | Consolidado Geral: ${somaAno} | Total Dia: ${somaDia} | Total Mês: ${somaMes} | Total Ano: ${somaAno}`;
+
   const items = linhas.map((l) => ({
     '0': dataReferencia || '',
     '1': l.consultor,
     '2': String(l.totalDia),
-    '3': String(l.totalMes)
+    '3': String(l.totalMes),
+    '4': String(l.totalAno)
   }));
 
   return {

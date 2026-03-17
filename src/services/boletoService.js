@@ -514,7 +514,7 @@ export async function buscarBoletoPorId(boletoId) {
  * @param {string} clienteId - ID do cliente
  * @returns {Promise<object>} { totalBaixadosApi, totalRemovidos }
  */
-export async function removerBoletosBaixados(clienteId) {
+export async function removerBoletosBaixados(clienteId, { dataInicialOverride, dataFinalOverride } = {}) {
   const clienteResult = await query(
     'SELECT id, nome, token_bearer, url_base_api FROM clientes WHERE id = $1 AND ativo = true',
     [clienteId]
@@ -525,12 +525,6 @@ export async function removerBoletosBaixados(clienteId) {
   const urlBase = (cliente.url_base_api || '').replace(/^["']|["']$/g, '').trim();
   if (!urlBase || !urlBase.startsWith('http')) throw new Error('url_base_api inválida');
 
-  // Período: 1o do mês até ontem (D-1)
-  const hoje = new Date();
-  const ontem = new Date(hoje);
-  ontem.setDate(ontem.getDate() - 1);
-  const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-
   const fmt = (d) => {
     const dia = String(d.getDate()).padStart(2, '0');
     const mes = String(d.getMonth() + 1).padStart(2, '0');
@@ -538,8 +532,19 @@ export async function removerBoletosBaixados(clienteId) {
     return `${dia}/${mes}/${ano}`;
   };
 
-  const dataInicial = fmt(primeiroDia);
-  const dataFinal = fmt(ontem);
+  let dataInicial, dataFinal;
+  if (dataInicialOverride && dataFinalOverride) {
+    dataInicial = dataInicialOverride;
+    dataFinal = dataFinalOverride;
+  } else {
+    // Período padrão: 1o do mês até ontem (D-1)
+    const hoje = new Date();
+    const ontem = new Date(hoje);
+    ontem.setDate(ontem.getDate() - 1);
+    const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+    dataInicial = fmt(primeiroDia);
+    dataFinal = fmt(ontem);
+  }
 
   console.log(`🔍 Buscando boletos baixados (data pagamento): ${dataInicial} a ${dataFinal}`);
 

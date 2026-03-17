@@ -452,6 +452,29 @@ export function obterPeriodos90Dias() {
   ];
 }
 
+/**
+ * Obtém o primeiro dia do ano vigente até a data de hoje
+ * @returns {object} Objeto com data_inicial (01/01/YYYY) e data_final (hoje DD/MM/YYYY)
+ */
+export function obterPeriodoAnoAteHoje() {
+  const hoje = new Date();
+  const ano = hoje.getFullYear();
+
+  const primeiroDiaAno = new Date(ano, 0, 1);
+
+  const formatarData = (data) => {
+    const dia = String(data.getDate()).padStart(2, '0');
+    const mesNum = String(data.getMonth() + 1).padStart(2, '0');
+    const anoNum = data.getFullYear();
+    return `${dia}/${mesNum}/${anoNum}`;
+  };
+
+  return {
+    data_inicial: formatarData(primeiroDiaAno),
+    data_final: formatarData(hoje)
+  };
+}
+
 export default {
   buscarBoletosPeriodo,
   buscarTodosBoletosPeriodo,
@@ -461,5 +484,6 @@ export default {
   validarFormatoData,
   obterPeriodoMesAtual,
   obterPeriodoMesAteHoje,
+  obterPeriodoAnoAteHoje,
   obterPeriodos90Dias
 };

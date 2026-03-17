@@ -1,5 +1,5 @@
 import { query } from '../config/database.js';
-import { obterPeriodoMesAteHoje, buscarVeiculosProducao } from '../services/sgaService.js';
+import { obterPeriodoMesAteHoje, obterPeriodoAnoAteHoje, buscarVeiculosProducao } from '../services/sgaService.js';
 import { montarPayloadRelatorioProducaoRanking, gerarPdfRelatorio } from '../services/relatorioPdfService.js';
 import { enviarUrlWhatsApp } from '../services/cleoiaService.js';
 
@@ -29,6 +29,7 @@ export async function executarRelatorioProducaoRanking() {
   const hoje = new Date();
   const hojeFormatado = formatarData(hoje);
   const { data_inicial: mesIni, data_final: mesFim } = obterPeriodoMesAteHoje();
+  const { data_inicial: anoIni, data_final: anoFim } = obterPeriodoAnoAteHoje();
 
   try {
     const clientesResult = await query(
@@ -70,9 +71,14 @@ export async function executarRelatorioProducaoRanking() {
           dataFinal: mesFim
         });
 
-        console.log(`   ${cliente.nome}: ${veiculos.length} adesões no mês`);
+        const veiculosAno = await buscarVeiculosProducao(cliente.token_bearer, urlBase, {
+          dataInicial: anoIni,
+          dataFinal: anoFim
+        });
 
-        if (veiculos.length === 0) {
+        console.log(`   ${cliente.nome}: ${veiculos.length} adesões no mês | ${veiculosAno.length} no ano`);
+
+        if (veiculos.length === 0 && veiculosAno.length === 0) {
           console.log(`   ${cliente.nome}: nenhuma adesão no período`);
           continue;
         }
@@ -83,7 +89,8 @@ export async function executarRelatorioProducaoRanking() {
           hojeFormatado,
           {
             title: `Relatório de Produção - Ranking Mensal - ${cliente.nome}`,
-            subtitle: hoje.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+            subtitle: hoje.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
+            veiculosAno
           }
         );
 

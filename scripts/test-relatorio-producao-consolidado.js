@@ -4,7 +4,7 @@
  */
 import 'dotenv/config';
 import { query } from '../src/config/database.js';
-import { obterPeriodoMesAteHoje, buscarVeiculosProducao } from '../src/services/sgaService.js';
+import { obterPeriodoMesAteHoje, obterPeriodoAnoAteHoje, buscarVeiculosProducao } from '../src/services/sgaService.js';
 import { montarPayloadRelatorioProducaoRanking, gerarPdfRelatorio } from '../src/services/relatorioPdfService.js';
 
 function fmt(d) {
@@ -15,8 +15,9 @@ async function main() {
   const hoje = new Date();
   const hojeFormatado = fmt(hoje);
   const { data_inicial: mesIni, data_final: mesFim } = obterPeriodoMesAteHoje();
+  const { data_inicial: anoIni, data_final: anoFim } = obterPeriodoAnoAteHoje();
 
-  console.log(`Período: ${mesIni} a ${mesFim}\n`);
+  console.log(`Período mês: ${mesIni} a ${mesFim} | Período ano: ${anoIni} a ${anoFim}\n`);
 
   const clientesResult = await query(
     'SELECT id, nome, token_bearer, url_base_api FROM clientes WHERE ativo = true'
@@ -44,7 +45,12 @@ async function main() {
       dataFinal: mesFim
     });
 
-    console.log(`${veiculos.length} adesões no mês\n`);
+    const veiculosAno = await buscarVeiculosProducao(cliente.token_bearer, urlBase, {
+      dataInicial: anoIni,
+      dataFinal: anoFim
+    });
+
+    console.log(`${veiculos.length} adesões no mês | ${veiculosAno.length} no ano\n`);
 
     const payload = montarPayloadRelatorioProducaoRanking(
       veiculos,
@@ -52,7 +58,8 @@ async function main() {
       hojeFormatado,
       {
         title: `Relatório de Produção - Ranking Mensal - ${cliente.nome}`,
-        subtitle: hoje.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+        subtitle: hoje.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
+        veiculosAno
       }
     );
 

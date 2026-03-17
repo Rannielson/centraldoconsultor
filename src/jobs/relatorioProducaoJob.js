@@ -1,12 +1,10 @@
 import { query } from '../config/database.js';
 import {
   obterPeriodoMesAteHoje,
-  obterPeriodos90Dias,
   buscarVeiculosProducao
 } from '../services/sgaService.js';
 import {
-  montarPayloadRelatorioProducao,
-  montarPayloadRelatorioProducaoRanking,
+  montarPayloadRelatorioVendasConsultor,
   gerarPdfRelatorio
 } from '../services/relatorioPdfService.js';
 import { enviarUrlWhatsApp, normalizarChatId } from '../services/cleoiaService.js';
@@ -14,21 +12,45 @@ import { enviarUrlWhatsApp, normalizarChatId } from '../services/cleoiaService.j
 const DELAY_ENTRE_ENVIOS_MS = Number(process.env.RELATORIO_PRODUCAO_DELAY_MS) || 3000;
 
 /**
- * Executa o relatório de produção: busca veículos (adesões) na Hinova
- * do 1º dia do mês até hoje, gera PDF único consolidado e envia para o destino configurado.
- * Roda às 18h30 via node-cron (America/Sao_Paulo).
+ * Formata data DD/MM/YYYY
+ */
+function formatarData(data) {
+  const dia = String(data.getDate()).padStart(2, '0');
+  const mes = String(data.getMonth() + 1).padStart(2, '0');
+  const ano = data.getFullYear();
+  return `${dia}/${mes}/${ano}`;
+}
+
+/**
+ * Extrai data ISO (YYYY-MM-DD) de data_contrato
+ */
+function extrairDataIso(value) {
+  if (!value) return '';
+  const s = String(value).trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  return iso ? `${iso[1]}-${iso[2]}-${iso[3]}` : '';
+}
+
+/**
+ * Executa o relatório de vendas individual para cada consultor.
+ * Resumo: vendas do dia, do mês e do ano.
+ * Roda à noite via node-cron (America/Sao_Paulo).
  */
 export async function executarRelatorioProducao() {
   const inicio = new Date();
-  console.log(`\n🕐 [Cron 18h30] Relatório de produção iniciado em ${inicio.toISOString()}`);
+  console.log(
+    `\n[Cron Noite] Relatorio de vendas (consultores) iniciado em ${inicio.toISOString()}`
+  );
 
-  const destinosRaw =
-    process.env.RELATORIO_PRODUCAO_DESTINO || '5583996336133,5583988473502';
-  const destinos = destinosRaw
-    .split(',')
-    .map((d) => d.trim())
-    .filter(Boolean);
-  const { data_inicial, data_final } = obterPeriodoMesAteHoje();
+  const hoje = new Date();
+  const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-${String(hoje.getDate()).padStart(2, '0')}`;
+
+  // Periodo do mes atual (1o dia ate hoje)
+  const { data_inicial: mesIni, data_final: mesFim } = obterPeriodoMesAteHoje();
+
+  // Periodo do ano (1o de janeiro ate hoje)
+  const anoIni = formatarData(new Date(hoje.getFullYear(), 0, 1));
+  const anoFim = formatarData(hoje);
 
   try {
     const clientesResult = await query(
@@ -37,18 +59,13 @@ export async function executarRelatorioProducao() {
     const clientes = clientesResult.rows;
 
     if (clientes.length === 0) {
-      console.log('⚠️ [Cron 18h30] Nenhum cliente ativo');
+      console.log('[Cron Noite] Nenhum cliente ativo');
       return;
     }
 
     console.log(
-      `📋 ${clientes.length} cliente(s) | Período: ${data_inicial} a ${data_final} | Destinos: ${destinos.join(', ')}\n`
+      `${clientes.length} cliente(s) | Mes: ${mesIni} a ${mesFim} | Ano: ${anoIni} a ${anoFim}\n`
     );
-
-    const consultoresMap = new Map();
-    const consultoresComContato = new Map();
-    const todosVeiculos = [];
-    const todosVeiculos90Dias = [];
 
     for (const cliente of clientes) {
       try {
@@ -57,140 +74,107 @@ export async function executarRelatorioProducao() {
           [cliente.id]
         );
 
+        const consultoresComContato = new Map();
         consultoresResult.rows.forEach((c) => {
-          const idSga = String(c.id_consultor_sga);
-          consultoresMap.set(idSga, c.nome || '');
           if (c.contato) {
-            consultoresComContato.set(idSga, {
+            consultoresComContato.set(String(c.id_consultor_sga), {
               nome: c.nome || '',
               contato: c.contato
             });
           }
         });
 
+        if (consultoresComContato.size === 0) {
+          console.log(`   ${cliente.nome}: sem consultores com contato`);
+          continue;
+        }
+
         const urlBase = (cliente.url_base_api || '').replace(/^["']|["']$/g, '').trim();
         if (!urlBase || !urlBase.startsWith('http')) {
-          console.error(`   ⚠️ ${cliente.nome}: url_base_api inválida ou ausente — pulando`);
+          console.error(`   ${cliente.nome}: url_base_api invalida — pulando`);
           continue;
         }
 
-        // Ranking: mês até hoje (uma busca)
-        const veiculos = await buscarVeiculosProducao(
-          cliente.token_bearer,
-          urlBase,
-          { dataInicial: data_inicial, dataFinal: data_final }
-        );
-        if (veiculos.length > 0) {
-          todosVeiculos.push(...veiculos);
-          console.log(`   ${cliente.nome}: ${veiculos.length} adesões (ranking)`);
-        }
-
-        // Individual: 3 faixas (0-30, 31-60, 61-90 dias)
-        const periodos90 = obterPeriodos90Dias();
-        const buscas = periodos90.map((p) =>
+        // Buscar veiculos (adesoes) do mes e do ano
+        const [veiculosMes, veiculosAno] = await Promise.all([
           buscarVeiculosProducao(cliente.token_bearer, urlBase, {
-            dataInicial: p.data_inicial,
-            dataFinal: p.data_final
-          }).then((v) => v.map((veic) => ({ ...veic, faixa: p.faixa })))
+            dataInicial: mesIni,
+            dataFinal: mesFim
+          }),
+          buscarVeiculosProducao(cliente.token_bearer, urlBase, {
+            dataInicial: anoIni,
+            dataFinal: anoFim
+          })
+        ]);
+
+        console.log(
+          `   ${cliente.nome}: ${veiculosMes.length} adesoes no mes, ${veiculosAno.length} no ano`
         );
-        const resultados = await Promise.all(buscas);
-        const veiculos90 = resultados.flat();
-        if (veiculos90.length > 0) {
-          todosVeiculos90Dias.push(...veiculos90);
-          console.log(`   ${cliente.nome}: ${veiculos90.length} adesões (90 dias, individual)`);
+
+        // Envio individual por consultor
+        let primeiroEnvio = true;
+        for (const [idSga, info] of consultoresComContato) {
+          const chatid = normalizarChatId(info.contato);
+          if (!chatid) {
+            console.log(`   ${info.nome} sem contato valido - pulando`);
+            continue;
+          }
+
+          // Contar vendas do dia, mes e ano para este consultor
+          const vendasMes = veiculosMes.filter(
+            (v) => String(v.codigo_voluntario) === idSga
+          );
+          const vendasDia = vendasMes.filter(
+            (v) => extrairDataIso(v.data_contrato) === hojeIso
+          );
+          const vendasAno = veiculosAno.filter(
+            (v) => String(v.codigo_voluntario) === idSga
+          );
+
+          try {
+            if (!primeiroEnvio) {
+              await new Promise((r) => setTimeout(r, DELAY_ENTRE_ENVIOS_MS));
+            }
+            primeiroEnvio = false;
+
+            const payload = montarPayloadRelatorioVendasConsultor(
+              {
+                vendasDia: vendasDia.length,
+                vendasMes: vendasMes.length,
+                vendasAno: vendasAno.length
+              },
+              info.nome,
+              {
+                title: `Relatorio de Vendas - ${info.nome}`,
+                subtitle: hoje.toLocaleDateString('pt-BR', {
+                  day: '2-digit',
+                  month: 'long',
+                  year: 'numeric'
+                })
+              }
+            );
+
+            const pdfUrl = await gerarPdfRelatorio(payload);
+            await enviarUrlWhatsApp(
+              chatid,
+              `Vendas: ${vendasDia.length} hoje | ${vendasMes.length} no mes | ${vendasAno.length} no ano`,
+              pdfUrl
+            );
+            console.log(
+              `   ${info.nome}: dia=${vendasDia.length} mes=${vendasMes.length} ano=${vendasAno.length} — enviado`
+            );
+          } catch (err) {
+            console.error(`   ${info.nome}:`, err.message);
+          }
         }
       } catch (err) {
-        console.error(`❌ Erro no cliente ${cliente.nome}:`, err.message);
-      }
-    }
-
-    const temRanking = todosVeiculos.length > 0;
-    const temIndividual = todosVeiculos90Dias.length > 0;
-    if (!temRanking && !temIndividual) {
-      console.log('⚠️ [Cron 18h30] Nenhuma adesão no período — envio omitido');
-      const duracao = ((Date.now() - inicio.getTime()) / 1000).toFixed(1);
-      console.log(`\n✅ [Cron 18h30] Concluído em ${duracao}s (sem produção)\n`);
-      return;
-    }
-
-    const subtitle = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-
-    // Relatório ranking (Data, Consultor, Total no dia, Total no mês)
-    if (temRanking) {
-      const payloadRanking = montarPayloadRelatorioProducaoRanking(
-        todosVeiculos,
-        consultoresMap,
-        data_final,
-        {
-          title: 'Relatório de Produção - Ranking - PROSEG',
-          subtitle
-        }
-      );
-      const pdfRankingUrl = await gerarPdfRelatorio(payloadRanking);
-      console.log(`📄 PDF ranking gerado: ${payloadRanking.content.items.length} consultores`);
-
-      for (const destino of destinos) {
-        await enviarUrlWhatsApp(
-          destino,
-          'RELATÓRIO DE PRODUÇÃO - RANKING - PROSEG',
-          pdfRankingUrl
-        );
-        console.log(`✅ WhatsApp (ranking) enviado para ${destino}`);
-      }
-    }
-
-    // Envio individual por consultor (se habilitado) — usa dados 90 dias
-    const enviarIndividual =
-      process.env.RELATORIO_PRODUCAO_INDIVIDUAL !== 'false' &&
-      process.env.RELATORIO_PRODUCAO_INDIVIDUAL !== '0';
-    if (enviarIndividual && temIndividual && consultoresComContato.size > 0) {
-      console.log(`\n📤 Envio individual para ${consultoresComContato.size} consultores com contato...`);
-      let primeiroEnvio = true;
-      for (const [idSga, info] of consultoresComContato) {
-        const chatid = normalizarChatId(info.contato);
-        if (!chatid) {
-          console.log(`   ⏭️ ${info.nome} sem contato válido - pulando`);
-          continue;
-        }
-        const veiculosConsultor = todosVeiculos90Dias.filter(
-          (v) => String(v.codigo_voluntario) === idSga
-        );
-        if (veiculosConsultor.length === 0) {
-          console.log(`   ⏭️ ${info.nome} sem produção no período - pulando`);
-          continue;
-        }
-        try {
-          if (!primeiroEnvio) {
-            await new Promise((r) => setTimeout(r, DELAY_ENTRE_ENVIOS_MS));
-          }
-          primeiroEnvio = false;
-          const payloadIndividual = montarPayloadRelatorioProducao(
-            veiculosConsultor,
-            consultoresMap,
-            {
-              title: `Sua Produção - ${info.nome}`,
-              subtitle: new Date().toLocaleDateString('pt-BR', {
-                month: 'long',
-                year: 'numeric'
-              })
-            }
-          );
-          const pdfIndividualUrl = await gerarPdfRelatorio(payloadIndividual);
-          await enviarUrlWhatsApp(
-            chatid,
-            `Sua produção (${veiculosConsultor.length} adesões nos últimos 90 dias)`,
-            pdfIndividualUrl
-          );
-          console.log(`   ✅ ${info.nome}: ${veiculosConsultor.length} adesões enviadas`);
-        } catch (err) {
-          console.error(`   ❌ ${info.nome}:`, err.message);
-        }
+        console.error(`Erro no cliente ${cliente.nome}:`, err.message);
       }
     }
 
     const duracao = ((Date.now() - inicio.getTime()) / 1000).toFixed(1);
-    console.log(`\n✅ [Cron 18h30] Relatório de produção concluído em ${duracao}s\n`);
+    console.log(`\n[Cron Noite] Relatorio de vendas concluido em ${duracao}s\n`);
   } catch (err) {
-    console.error('❌ [Cron 18h30] Erro no relatório de produção:', err.message);
+    console.error('[Cron Noite] Erro no relatorio de vendas:', err.message);
   }
 }
