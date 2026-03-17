@@ -1,8 +1,7 @@
 /**
  * Envia relatório de INADIMPLÊNCIA (boletos em aberto) dos últimos 90 dias (3 faixas)
- * de um consultor por WhatsApp. NÃO grava no banco - busca da API Hinova (listar/boleto-associado/periodo).
- *
- * Inadimplência = boletos. Produção = vendas/adesões (outro relatório).
+ * de um consultor por WhatsApp. Inclui resumo do mês no cabeçalho.
+ * NÃO grava no banco - busca da API Hinova (listar/boleto-associado/periodo).
  *
  * Uso: node scripts/enviar-relatorio-inadimplencia-90dias-consultor.js
  *      ID_CONSULTOR_SGA=2 CONTATO_DESTINO=5581992387425 node scripts/enviar-relatorio-inadimplencia-90dias-consultor.js
@@ -13,9 +12,10 @@ import 'dotenv/config';
 import { query } from '../src/config/database.js';
 import {
   obterPeriodos90Dias,
+  obterPeriodoMesAtual,
   buscarTodosBoletosPeriodo
 } from '../src/services/sgaService.js';
-import { montarPayloadRelatorio, gerarPdfRelatorio } from '../src/services/relatorioPdfService.js';
+import { montarPayloadRelatorioInadimplenciaConsultor, gerarPdfRelatorio } from '../src/services/relatorioPdfService.js';
 import { enviarUrlWhatsApp, normalizarChatId } from '../src/services/cleoiaService.js';
 
 const ID_CONSULTOR_SGA = String(process.env.ID_CONSULTOR_SGA || '2');
@@ -51,22 +51,40 @@ async function main() {
 
   // 2. Buscar boletos em 3 faixas (0-30, 31-60, 61-90 dias)
   const periodos90 = obterPeriodos90Dias();
-  console.log('\n📡 Buscando boletos na Hinova (3 faixas: 0-30, 31-60, 61-90 dias)...');
+  const { data_inicial: mesIni, data_final: mesFim } = obterPeriodoMesAtual();
+  console.log(`\n📡 Buscando boletos na Hinova (3 faixas: 0-30, 31-60, 61-90 dias)...`);
+  console.log(`📅 Resumo mês: ${mesIni} a ${mesFim}`);
 
-  const buscas = periodos90.map((p) =>
+  const buscas90 = periodos90.map((p) =>
     buscarTodosBoletosPeriodo(token_bearer, urlBase, {
       codigo_situacao_boleto: '2',
       data_vencimento_inicial: p.data_inicial,
       data_vencimento_final: p.data_final
     })
   );
-  const resultados = await Promise.all(buscas);
 
-  // 3. Filtrar por codigo_voluntario e situacao_veiculo, ordenar por nome_associado A-Z
-  const todosBoletos = resultados.flat();
+  const buscaAbertosMes = buscarTodosBoletosPeriodo(token_bearer, urlBase, {
+    codigo_situacao_boleto: '2',
+    data_vencimento_inicial: mesIni,
+    data_vencimento_final: mesFim
+  });
+  const buscaBaixadosMes = buscarTodosBoletosPeriodo(token_bearer, urlBase, {
+    codigo_situacao_boleto: '1',
+    data_vencimento_inicial: mesIni,
+    data_vencimento_final: mesFim
+  });
+
+  const [resultados90, boletosAbertosMes, boletosBaixadosMes] = await Promise.all([
+    Promise.all(buscas90),
+    buscaAbertosMes,
+    buscaBaixadosMes
+  ]);
+
+  // 3. Filtrar boletos 90 dias por consultor
+  const todosBoletos = resultados90.flat();
   const boletos = [];
   for (const boleto of todosBoletos) {
-      if (!boleto.veiculos || !boleto.veiculos.length) continue;
+    if (!boleto.veiculos || !boleto.veiculos.length) continue;
     for (const veiculo of boleto.veiculos) {
       if (String(veiculo.codigo_voluntario) !== ID_CONSULTOR_SGA) continue;
       if (!SITUACOES_ACEITAS.includes(veiculo.situacao_veiculo)) continue;
@@ -87,23 +105,52 @@ async function main() {
     return nomeA.localeCompare(nomeB);
   });
 
-  if (boletos.length === 0) {
-    console.log('\n⚠️ Nenhum boleto encontrado para este consultor nos últimos 90 dias.');
+  // 4. Contar boletos do mês para este consultor (resumo)
+  let abertosMes = 0;
+  let baixadosMes = 0;
+
+  for (const boleto of boletosAbertosMes) {
+    if (!boleto.veiculos || !boleto.veiculos.length) continue;
+    for (const veiculo of boleto.veiculos) {
+      if (String(veiculo.codigo_voluntario) !== ID_CONSULTOR_SGA) continue;
+      if (!SITUACOES_ACEITAS.includes(veiculo.situacao_veiculo)) continue;
+      abertosMes++;
+    }
+  }
+
+  for (const boleto of boletosBaixadosMes) {
+    if (!boleto.veiculos || !boleto.veiculos.length) continue;
+    for (const veiculo of boleto.veiculos) {
+      if (String(veiculo.codigo_voluntario) !== ID_CONSULTOR_SGA) continue;
+      if (!SITUACOES_ACEITAS.includes(veiculo.situacao_veiculo)) continue;
+      baixadosMes++;
+    }
+  }
+
+  const totalMes = abertosMes + baixadosMes;
+
+  console.log(`\n📄 ${boletos.length} boleto(s) no período (90 dias)`);
+  console.log(`📊 Resumo mês: ${abertosMes} abertos, ${baixadosMes} baixados, ${totalMes} total`);
+
+  if (boletos.length === 0 && totalMes === 0) {
+    console.log('\n⚠️ Nenhum boleto encontrado para este consultor.');
     return;
   }
 
-  console.log(`\n📄 ${boletos.length} boleto(s) no período (90 dias)`);
-
-  // 4. Gerar PDF
+  // 5. Gerar PDF com novo payload (resumo + detalhe)
   console.log('\n📄 Gerando PDF via OpenPDF...');
-  const payload = montarPayloadRelatorio(boletos, nomeConsultor, {
-    title: `Relatório de Inadimplência dos Últimos 90 Dias - ${nomeConsultor}`,
-    subtitle: new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
-  });
+  const payload = montarPayloadRelatorioInadimplenciaConsultor(
+    { totalMes, abertos: abertosMes },
+    boletos,
+    nomeConsultor,
+    {
+      title: `Relatório de Inadimplência dos Últimos 90 Dias - ${nomeConsultor}`
+    }
+  );
   const pdfUrl = await gerarPdfRelatorio(payload);
   console.log('✅ PDF gerado:', pdfUrl);
 
-  // 5. Enviar por WhatsApp
+  // 6. Enviar por WhatsApp
   const chatid = normalizarChatId(CONTATO_DESTINO);
   if (!chatid) {
     throw new Error(`Contato destino inválido: ${CONTATO_DESTINO}`);

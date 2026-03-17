@@ -418,6 +418,112 @@ export async function gerarPdfRelatorio(payload) {
   return pdfUrl;
 }
 
+/**
+ * Monta o payload do relatório de inadimplência individual para consultor.
+ * Resumo no topo: total do mês (aberto + baixado) e abertos do mês atual.
+ * Detalhamento: boletos inadimplentes dos últimos 3 meses.
+ *
+ * @param {object} resumo - Dados resumidos do mês atual
+ * @param {number} resumo.totalMes - Total de boletos no mês (aberto + baixado)
+ * @param {number} resumo.abertos - Total de boletos abertos no mês
+ * @param {object[]} boletosDetalhe - Boletos inadimplentes dos últimos 3 meses
+ * @param {string} nomeConsultor - Nome do consultor
+ * @param {object} [opcoes] - Opções adicionais
+ * @param {string} [opcoes.title] - Título do relatório
+ * @param {string} [opcoes.subtitle] - Subtítulo
+ * @returns {object} Payload para OpenPDF (template relatorio-inadimplencia-consultor)
+ */
+export function montarPayloadRelatorioInadimplenciaConsultor(resumo, boletosDetalhe, nomeConsultor, opcoes = {}) {
+  const title = opcoes.title || `Relatório de Inadimplência - ${nomeConsultor}`;
+
+  const totalMes = resumo.totalMes ?? 0;
+  const abertos = resumo.abertos ?? 0;
+  const baixados = totalMes - abertos;
+  const pctAbertos = totalMes > 0 ? ((abertos / totalMes) * 100).toFixed(1) : '0.0';
+
+  const mesAno = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  const pctBaixados = totalMes > 0 ? ((baixados / totalMes) * 100).toFixed(1) : '0.0';
+  const subtitle = opcoes.subtitle || `${mesAno} | Resumo do Mês: ${totalMes} boletos | ${abertos} abertos (${pctAbertos}%) | ${baixados} baixados (${pctBaixados}%)`;
+
+  // 8 colunas iguais ao template boletos-proseg + parcela N/Total
+  const totalPorAssociado = new Map();
+  for (const b of boletosDetalhe) {
+    const n = b.nome_associado || '';
+    totalPorAssociado.set(n, (totalPorAssociado.get(n) || 0) + 1);
+  }
+  const atualPorAssociado = new Map();
+
+  const items = boletosDetalhe.map((boleto) => {
+    const nome = boleto.nome_associado || '';
+    const total = totalPorAssociado.get(nome) || 1;
+    const atual = (atualPorAssociado.get(nome) || 0) + 1;
+    atualPorAssociado.set(nome, atual);
+    const parcela = `${atual}/${total}`;
+
+    return {
+      '0': boleto.status_boleto || getStatus(boleto.data_vencimento),
+      '1': boleto.nome_associado || '',
+      '2': boleto.celular || '',
+      '3': formatDate(boleto.data_vencimento),
+      '4': formatCurrency(boleto.valor_boleto),
+      '5': boleto.placa_veiculo || boleto.placa || '',
+      '6': boleto.nome_consultor || nomeConsultor || '',
+      '7': parcela
+    };
+  });
+
+  return {
+    templateId: 'relatorio-inadimplencia-consultor',
+    config: {
+      orientation: 'landscape'
+    },
+    content: {
+      title,
+      subtitle,
+      items
+    }
+  };
+}
+
+/**
+ * Monta o payload do relatório de vendas individual para consultor.
+ * Apenas resumo: vendas do dia, do mês e do ano.
+ *
+ * @param {object} resumo - Dados resumidos de vendas
+ * @param {number} resumo.vendasDia - Quantidade de vendas no dia
+ * @param {number} resumo.vendasMes - Quantidade de vendas no mês
+ * @param {number} resumo.vendasAno - Quantidade de vendas no ano
+ * @param {string} nomeConsultor - Nome do consultor
+ * @param {object} [opcoes] - Opções adicionais
+ * @param {string} [opcoes.title] - Título do relatório
+ * @param {string} [opcoes.subtitle] - Subtítulo
+ * @returns {object} Payload para OpenPDF (template relatorio-vendas-consultor)
+ */
+export function montarPayloadRelatorioVendasConsultor(resumo, nomeConsultor, opcoes = {}) {
+  const title = opcoes.title || `Relatório de Vendas - ${nomeConsultor}`;
+  const hoje = new Date();
+  const subtitle =
+    opcoes.subtitle || hoje.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
+
+  const items = [
+    { '0': 'Vendas no Dia', '1': String(resumo.vendasDia ?? 0), '2': 'Hoje' },
+    { '0': 'Vendas no Mês', '1': String(resumo.vendasMes ?? 0), '2': hoje.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) },
+    { '0': 'Vendas no Ano', '1': String(resumo.vendasAno ?? 0), '2': String(hoje.getFullYear()) }
+  ];
+
+  return {
+    templateId: 'relatorio-vendas-consultor',
+    config: {
+      orientation: 'portrait'
+    },
+    content: {
+      title,
+      subtitle,
+      items
+    }
+  };
+}
+
 export default {
   formatDate,
   formatCurrency,
@@ -427,5 +533,7 @@ export default {
   montarPayloadRelatorioProducao,
   montarPayloadRelatorioProducaoSintetico,
   montarPayloadRelatorioProducaoRanking,
+  montarPayloadRelatorioInadimplenciaConsultor,
+  montarPayloadRelatorioVendasConsultor,
   gerarPdfRelatorio
 };

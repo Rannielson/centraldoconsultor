@@ -1,6 +1,6 @@
 import { query } from '../config/database.js';
-import { obterPeriodos90Dias, buscarTodosBoletosPeriodo } from '../services/sgaService.js';
-import { montarPayloadRelatorio, gerarPdfRelatorio } from '../services/relatorioPdfService.js';
+import { obterPeriodos90Dias, obterPeriodoMesAtual, buscarTodosBoletosPeriodo } from '../services/sgaService.js';
+import { montarPayloadRelatorioInadimplenciaConsultor, gerarPdfRelatorio } from '../services/relatorioPdfService.js';
 import { normalizarChatId, enviarUrlWhatsApp } from '../services/cleoiaService.js';
 
 const SITUACOES_ACEITAS = ['ATIVO', 'INADIMPLENTE'];
@@ -10,7 +10,7 @@ const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Executa o job diário: busca boletos na Hinova dos últimos 90 dias (sem gravar no banco),
- * gera PDF individual por consultor e envia por WhatsApp com delay de 59s entre envios.
+ * gera PDF individual por consultor com resumo do mês no cabeçalho e envia por WhatsApp.
  * Roda às 9h10 via node-cron.
  */
 export async function executarSincronizacaoDiaria() {
@@ -18,6 +18,7 @@ export async function executarSincronizacaoDiaria() {
   console.log(`\n🕐 [Cron] Iniciando sincronização diária em ${inicio.toISOString()}`);
 
   const periodos90 = obterPeriodos90Dias();
+  const { data_inicial: mesIni, data_final: mesFim } = obterPeriodoMesAtual();
 
   try {
     const clientesResult = await query(
@@ -31,7 +32,8 @@ export async function executarSincronizacaoDiaria() {
     }
 
     console.log(`📋 [Cron] ${clientes.length} cliente(s) ativo(s)`);
-    console.log(`📅 Período: últimos 90 dias (3 faixas: 0-30, 31-60, 61-90 dias)\n`);
+    console.log(`📅 Período: últimos 90 dias (3 faixas: 0-30, 31-60, 61-90 dias)`);
+    console.log(`📅 Resumo mês: ${mesIni} a ${mesFim}\n`);
 
     let primeiroEnvio = true;
 
@@ -60,6 +62,7 @@ export async function executarSincronizacaoDiaria() {
           continue;
         }
 
+        // Buscar boletos abertos dos últimos 90 dias (detalhamento)
         const buscas = periodos90.map((p) =>
           buscarTodosBoletosPeriodo(cliente.token_bearer, urlBase, {
             codigo_situacao_boleto: '2',
@@ -67,9 +70,27 @@ export async function executarSincronizacaoDiaria() {
             data_vencimento_final: p.data_final
           })
         );
-        const resultados = await Promise.all(buscas);
-        const boletosApi = resultados.flat();
 
+        // Buscar boletos do mês atual (resumo): abertos + baixados
+        const buscaAbertosMes = buscarTodosBoletosPeriodo(cliente.token_bearer, urlBase, {
+          codigo_situacao_boleto: '2',
+          data_vencimento_inicial: mesIni,
+          data_vencimento_final: mesFim
+        });
+        const buscaBaixadosMes = buscarTodosBoletosPeriodo(cliente.token_bearer, urlBase, {
+          codigo_situacao_boleto: '1',
+          data_vencimento_inicial: mesIni,
+          data_vencimento_final: mesFim
+        });
+
+        const [resultados90, boletosAbertosMes, boletosBaixadosMes] = await Promise.all([
+          Promise.all(buscas),
+          buscaAbertosMes,
+          buscaBaixadosMes
+        ]);
+        const boletosApi = resultados90.flat();
+
+        // Agrupar boletos 90 dias por consultor
         const porConsultor = new Map();
 
         for (const boleto of boletosApi) {
@@ -90,6 +111,30 @@ export async function executarSincronizacaoDiaria() {
               placa_veiculo: veiculo.placa || '',
               nome_consultor: consultor.nome || ''
             });
+          }
+        }
+
+        // Contar boletos do mês por consultor (para resumo)
+        const abertosMesPorConsultor = new Map();
+        const baixadosMesPorConsultor = new Map();
+
+        for (const boleto of boletosAbertosMes) {
+          if (!boleto.veiculos || !boleto.veiculos.length) continue;
+          for (const veiculo of boleto.veiculos) {
+            if (!SITUACOES_ACEITAS.includes(veiculo.situacao_veiculo)) continue;
+            const idSga = String(veiculo.codigo_voluntario);
+            if (!consultoresMap.has(idSga)) continue;
+            abertosMesPorConsultor.set(idSga, (abertosMesPorConsultor.get(idSga) || 0) + 1);
+          }
+        }
+
+        for (const boleto of boletosBaixadosMes) {
+          if (!boleto.veiculos || !boleto.veiculos.length) continue;
+          for (const veiculo of boleto.veiculos) {
+            if (!SITUACOES_ACEITAS.includes(veiculo.situacao_veiculo)) continue;
+            const idSga = String(veiculo.codigo_voluntario);
+            if (!consultoresMap.has(idSga)) continue;
+            baixadosMesPorConsultor.set(idSga, (baixadosMesPorConsultor.get(idSga) || 0) + 1);
           }
         }
 
@@ -118,18 +163,26 @@ export async function executarSincronizacaoDiaria() {
             }
             primeiroEnvio = false;
 
-            const payload = montarPayloadRelatorio(boletos, consultor.nome, {
-              title: `Relatório de Inadimplência dos Últimos 90 Dias - ${consultor.nome}`,
-              subtitle: new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
-            });
+            const abertosMes = abertosMesPorConsultor.get(idSga) || 0;
+            const baixadosMes = baixadosMesPorConsultor.get(idSga) || 0;
+            const totalMes = abertosMes + baixadosMes;
+
+            const payload = montarPayloadRelatorioInadimplenciaConsultor(
+              { totalMes, abertos: abertosMes },
+              boletos,
+              consultor.nome,
+              {
+                title: `Relatório de Inadimplência dos Últimos 90 Dias - ${consultor.nome}`
+              }
+            );
 
             const pdfUrl = await gerarPdfRelatorio(payload);
-            console.log(`   📄 PDF gerado para ${consultor.nome} (${boletos.length} boletos)`);
+            console.log(`   📄 PDF gerado para ${consultor.nome} (${boletos.length} boletos, resumo: ${abertosMes} abertos/${totalMes} mês)`);
 
             await enviarUrlWhatsApp(chatid, `RELATÓRIO DE INADIMPLÊNCIA DOS ÚLTIMOS 90 DIAS - ${consultor.nome}`, pdfUrl);
             console.log(`   ✅ WhatsApp enviado para ${consultor.nome}`);
           } catch (err) {
-            console.error(`   ❌ Erro ao processar ${consultor?.nome || idSga}:`, err.message);
+            console.error(`   ❌ Erro ao processar ${consultoresMap.get(idSga)?.nome || idSga}:`, err.message);
           }
         }
       } catch (err) {
