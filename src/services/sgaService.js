@@ -22,11 +22,13 @@ export async function buscarBoletosPeriodo(tokenBearer, urlBase, params) {
     
     const requestBody = {
       codigo_situacao_boleto: params.codigo_situacao_boleto || "2",
-      data_vencimento_inicial: params.data_vencimento_inicial,
-      data_vencimento_final: params.data_vencimento_final,
       inicio_paginacao: params.inicio_paginacao || 0,
       quantidade_por_pagina: params.quantidade_por_pagina || 500
     };
+    if (params.data_vencimento_inicial) requestBody.data_vencimento_inicial = params.data_vencimento_inicial;
+    if (params.data_vencimento_final) requestBody.data_vencimento_final = params.data_vencimento_final;
+    if (params.data_pagamento_inicial) requestBody.data_pagamento_inicial = params.data_pagamento_inicial;
+    if (params.data_pagamento_final) requestBody.data_pagamento_final = params.data_pagamento_final;
     
     console.log(`📡 Requisição para API SGA: ${endpoint}`);
     console.log(`📄 Parâmetros:`, requestBody);

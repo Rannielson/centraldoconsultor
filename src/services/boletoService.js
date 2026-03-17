@@ -507,9 +507,88 @@ export async function buscarBoletoPorId(boletoId) {
   }
 }
 
+/**
+ * Remove do banco os boletos que foram baixados (pagos) na API SGA.
+ * Busca boletos com codigo_situacao_boleto '1' (baixados) do 1o do mês até D-1,
+ * compara nosso_numero e deleta da tabela boletos.
+ * @param {string} clienteId - ID do cliente
+ * @returns {Promise<object>} { totalBaixadosApi, totalRemovidos }
+ */
+export async function removerBoletosBaixados(clienteId) {
+  const clienteResult = await query(
+    'SELECT id, nome, token_bearer, url_base_api FROM clientes WHERE id = $1 AND ativo = true',
+    [clienteId]
+  );
+  if (clienteResult.rows.length === 0) throw new Error('Cliente não encontrado ou inativo');
+
+  const cliente = clienteResult.rows[0];
+  const urlBase = (cliente.url_base_api || '').replace(/^["']|["']$/g, '').trim();
+  if (!urlBase || !urlBase.startsWith('http')) throw new Error('url_base_api inválida');
+
+  // Período: 1o do mês até ontem (D-1)
+  const hoje = new Date();
+  const ontem = new Date(hoje);
+  ontem.setDate(ontem.getDate() - 1);
+  const primeiroDia = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+
+  const fmt = (d) => {
+    const dia = String(d.getDate()).padStart(2, '0');
+    const mes = String(d.getMonth() + 1).padStart(2, '0');
+    const ano = d.getFullYear();
+    return `${dia}/${mes}/${ano}`;
+  };
+
+  const dataInicial = fmt(primeiroDia);
+  const dataFinal = fmt(ontem);
+
+  console.log(`🔍 Buscando boletos baixados (data pagamento): ${dataInicial} a ${dataFinal}`);
+
+  const boletosBaixados = await buscarTodosBoletosPeriodo(
+    cliente.token_bearer,
+    urlBase,
+    {
+      codigo_situacao_boleto: '1',
+      data_pagamento_inicial: dataInicial,
+      data_pagamento_final: dataFinal
+    }
+  );
+
+  if (boletosBaixados.length === 0) {
+    console.log('   Nenhum boleto baixado no período');
+    return { totalBaixadosApi: 0, totalRemovidos: 0 };
+  }
+
+  // Extrair nosso_numero dos baixados
+  const nossosNumeros = boletosBaixados
+    .map((b) => b.nosso_numero?.toString())
+    .filter(Boolean);
+
+  const uniqueNossosNumeros = [...new Set(nossosNumeros)];
+
+  if (uniqueNossosNumeros.length === 0) {
+    return { totalBaixadosApi: boletosBaixados.length, totalRemovidos: 0 };
+  }
+
+  // Deletar em lotes de 500
+  let totalRemovidos = 0;
+  for (let i = 0; i < uniqueNossosNumeros.length; i += 500) {
+    const lote = uniqueNossosNumeros.slice(i, i + 500);
+    const placeholders = lote.map((_, idx) => `$${idx + 2}`).join(', ');
+    const result = await query(
+      `DELETE FROM boletos WHERE cliente_id = $1 AND nosso_numero IN (${placeholders})`,
+      [clienteId, ...lote]
+    );
+    totalRemovidos += result.rowCount || 0;
+  }
+
+  console.log(`   ✅ ${totalRemovidos} boleto(s) removido(s) de ${uniqueNossosNumeros.length} baixados na API`);
+  return { totalBaixadosApi: boletosBaixados.length, totalRemovidos };
+}
+
 export default {
   sincronizarBoletos,
   sincronizarBoletosMesAteHoje,
   listarBoletos,
-  buscarBoletoPorId
+  buscarBoletoPorId,
+  removerBoletosBaixados
 };

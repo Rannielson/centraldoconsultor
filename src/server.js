@@ -11,6 +11,7 @@ import { executarSincronizacaoDiaria } from './jobs/sincronizacaoDiariaJob.js';
 import { executarRelatorioConsolidado } from './jobs/relatorioConsolidadoJob.js';
 import { executarRelatorioProducao } from './jobs/relatorioProducaoJob.js';
 import { executarRelatorioProducaoRanking } from './jobs/relatorioProducaoRankingJob.js';
+import { executarLimpezaBoletosBaixados } from './jobs/limpezaBoletosBaixadosJob.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(__dirname, '..', 'public');
@@ -336,7 +337,10 @@ async function start() {
     cron.schedule('30 19 * * *', executarRelatorioProducao, {
       timezone: process.env.CRON_TIMEZONE || 'America/Sao_Paulo'
     });
-    console.log('⏰ Cron registrado: inadimplência consultores 9h10, consolidado gestão 19h, ranking produção gestão 19h15, vendas consultores 19h30 (America/Sao_Paulo)');
+    cron.schedule('0 23 * * *', executarLimpezaBoletosBaixados, {
+      timezone: process.env.CRON_TIMEZONE || 'America/Sao_Paulo'
+    });
+    console.log('⏰ Cron registrado: inadimplência 9h10, consolidado 19h, ranking 19h15, vendas 19h30, limpeza baixados 23h (America/Sao_Paulo)');
     
     console.log('\n✅ Servidor iniciado com sucesso!\n');
     console.log(`📍 URL: http://localhost:${port}`);
